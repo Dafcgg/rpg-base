@@ -9,12 +9,12 @@ import java.util.Iterator;
 import java.util.List;
 
 /**
- * Contenedor genérico con capacidad limitada: {@code Inventario<Pocion>} solo acepta pociones.
+ * Contenedor generico con capacidad limitada: {@code Inventario<Pocion>} solo acepta pociones.
  *
  * <p>Implementa {@link Serializable} para que el inventario del personaje se persista
- * correctamente. Los elementos {@code T} también deben ser serializables (hoy {@link Pocion}).</p>
+ * correctamente. Los elementos {@code T} tambien deben ser serializables (hoy {@link Pocion}).</p>
  */
-// TALLER ARCHIVOS: implementa Serializable; los elementos T (hoy Pocion) también lo necesitan.
+// TALLER ARCHIVOS: implementa Serializable; los elementos T (hoy Pocion) tambien lo necesitan.
 public class Inventario<T> implements Iterable<T>, Serializable {
 
     @Serial

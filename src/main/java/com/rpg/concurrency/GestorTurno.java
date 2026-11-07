@@ -5,12 +5,12 @@ import com.rpg.core.TurnoCallback;
 /**
  * Administra el hilo de cuenta regresiva para el turno del jugador.
  *
- * <h2>Uso típico</h2>
+ * <h2>Uso tipico</h2>
  * <pre>{@code
  * GestorTurno gestor = new GestorTurno(15);
  * gestor.iniciarTemporizador(() -> accionPorDefecto = Accion.ATACAR);
  * // ... leer la entrada del jugador ...
- * gestor.cancelar(); // si el jugador respondió a tiempo
+ * gestor.cancelar(); // si el jugador respondio a tiempo
  * }</pre>
  *
  * <h2>Thread safety</h2>
@@ -22,11 +22,11 @@ public class GestorTurno {
 
     private final int segundosPorTurno;
 
-    /** Referencia volátil al hilo en curso; null si no hay temporizador activo. */
+    /** Referencia volatil al hilo en curso; null si no hay temporizador activo. */
     private volatile Thread hiloActivo;
 
     /**
-     * @param segundosPorTurno duración máxima de cada turno en segundos
+     * @param segundosPorTurno duracion maxima de cada turno en segundos
      */
     public GestorTurno(int segundosPorTurno) {
         this.segundosPorTurno = segundosPorTurno;
@@ -34,7 +34,7 @@ public class GestorTurno {
 
     /**
      * Crea y arranca un nuevo hilo de cuenta regresiva.
-     * Si ya había uno activo, lo cancela antes de iniciar el nuevo.
+     * Si ya habia uno activo, lo cancela antes de iniciar el nuevo.
      *
      * @param callback receptor de {@code onTiempoAgotado()} si el turno expira
      */
@@ -53,7 +53,7 @@ public class GestorTurno {
 
     /**
      * Interrumpe el temporizador activo (si existe).
-     * Después de esta llamada el hilo terminará limpiamente.
+     * Despues de esta llamada el hilo terminara limpiamente.
      */
     public void cancelar() {
         Thread hilo = hiloActivo;
@@ -65,7 +65,7 @@ public class GestorTurno {
 
     /**
      * Espera a que el hilo del temporizador termine completamente.
-     * Útil en tests para evitar salidas entrelazadas.
+     * Util en tests para evitar salidas entrelazadas.
      */
     public void esperarFin() {
         Thread hilo = hiloActivo;

@@ -4,6 +4,7 @@ import com.rpg.concurrency.AutoGuardadoDaemon;
 import com.rpg.concurrency.EfectoContinuoTask;
 import com.rpg.concurrency.GestorTurno;
 import com.rpg.concurrency.TemporizadorTurnoTask;
+import com.rpg.controller.HeroeController;
 import com.rpg.core.Accion;
 import com.rpg.core.Arena;
 import com.rpg.core.Bestiario;
@@ -13,6 +14,7 @@ import com.rpg.core.FormatoCombate;
 import com.rpg.core.RegistroCombate;
 import com.rpg.core.TorneoManager;
 import com.rpg.core.TurnoCallback;
+import com.rpg.dao.HeroeDAO;
 import com.rpg.entities.Arma;
 import com.rpg.entities.Enemigo;
 import com.rpg.entities.Escuadron;
@@ -29,6 +31,7 @@ import com.rpg.items.Inventario;
 import com.rpg.items.Pocion;
 import com.rpg.demo.DemoArchivos;
 import com.rpg.demo.DemoHilosDaemon;
+import com.rpg.model.Heroe;
 import com.rpg.persistencia.GestorPartidas;
 
 import java.io.*;
@@ -61,6 +64,7 @@ public class DryRunSuite {
         System.out.println("======================================================================\n");
 
         testCompilacionYFirmas();
+        testRegistroHeroe();
         testConcurrenciaHilos();
         testPersistenciaArchivos();
         testCorreccionesAuditoria();
@@ -102,6 +106,32 @@ public class DryRunSuite {
         Enemigo orco = new Enemigo("Orco", 70, 12, 4);
         afirmo(orco.copia() != null && orco.copia().getNombre().equals("Orco"),
                 "Enemigo hereda de Personaje y clonacion mediante copia()");
+    }
+
+    private static void testRegistroHeroe() {
+        Heroe heroe = new Heroe(3, "Aria", "GUERRERO", 155, 5);
+        HeroeController controller = new HeroeController(new HeroeDAO());
+        Personaje personaje = controller.convertirAEntity(heroe);
+        Guerrero esperado = new Guerrero("Aria");
+        esperado.setNivel(5);
+        afirmo(heroe.getTipo().equals("guerrero")
+                        && personaje instanceof Guerrero
+                        && personaje.getVidaMaxima() == 155
+                        && personaje.getNivel() == 5
+                        && personaje.calcularDanio() == esperado.calcularDanio(),
+                "Heroe de BD conserva tipo, vida maxima y nivel en combate");
+
+        Personaje mago = controller.convertirAEntity(new Heroe(4, "Merlin", "mago", 110, 3));
+        afirmo(mago instanceof Mago && mago.getVidaMaxima() == 110 && mago.getNivel() == 3,
+                "Heroe mago de BD conserva sus estadisticas");
+
+        boolean rechazaTipoInvalido = false;
+        try {
+            new Heroe("Aria", "dragon", 100, 1);
+        } catch (IllegalArgumentException e) {
+            rechazaTipoInvalido = true;
+        }
+        afirmo(rechazaTipoInvalido, "Heroe rechaza tipos fuera de guerrero o mago");
     }
 
     // ==================================================================
@@ -486,7 +516,7 @@ public class DryRunSuite {
         obj3.quitarEfecto("Lento");
         obj1.restaurarVida();
 
-        // 7.10 AutoGuardadoDaemon: bucle while (true) y salida limpia ante interrupt()
+        // 7.10 AutoGuardadoDaemon: bucle isInterrupted() y salida limpia ante interrupt()
         String fuenteDaemon = Files.readString(Path.of("src/main/java/com/rpg/concurrency/AutoGuardadoDaemon.java"));
         GestorPartidas gestorDaemon = new GestorPartidas();
         gestorDaemon.setPerfilActual(new PerfilJugador());
@@ -496,8 +526,8 @@ public class DryRunSuite {
         Thread.sleep(150);
         daemon.interrupt();
         daemon.join(2000);
-        afirmo(fuenteDaemon.contains("while (true)") && !daemon.isAlive(),
-                "AutoGuardadoDaemon usa while (true) y termina limpio al interrumpirse");
+        afirmo(fuenteDaemon.contains("isInterrupted()") && !daemon.isAlive(),
+                "AutoGuardadoDaemon usa isInterrupted() y termina limpio al interrumpirse");
         gestorDaemon.eliminarAutoguardado();
 
         // 7.11 Nivel del personaje: validacion, efecto en el dano y persistencia

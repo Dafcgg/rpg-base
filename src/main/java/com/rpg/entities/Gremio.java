@@ -7,15 +7,15 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Agregación: el gremio guarda referencias a personajes que existen por su cuenta.
+ * Agregacion: el gremio guarda referencias a personajes que existen por su cuenta.
  *
  * <p>Implementa {@link Serializable} porque es referenciado desde {@link Personaje#getGremio()}
- * y se incluye en el grafo de serialización de la partida.</p>
+ * y se incluye en el grafo de serializacion de la partida.</p>
  *
  * <p><strong>Ciclo de referencia:</strong> {@code Gremio} referencia a {@code List<Personaje>}
  * y cada {@code Personaje} referencia de vuelta a su {@code Gremio}. Java Serialization
  * maneja estos ciclos correctamente mediante su grafo interno de objetos ya escritos,
- * evitando recursión infinita y duplicación.</p>
+ * evitando recursion infinita y duplicacion.</p>
  */
 public class Gremio implements Serializable {
 

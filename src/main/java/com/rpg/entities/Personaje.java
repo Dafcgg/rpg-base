@@ -24,18 +24,18 @@ import java.util.concurrent.locks.ReentrantLock;
 /**
  * Clase base de todos los personajes del juego.
  *
- * <h2>Serialización</h2>
+ * <h2>Serializacion</h2>
  * <p>Implementa {@link Serializable} con {@code serialVersionUID = 1L}. Los campos
  * {@code hilosEfectos} se marcan como {@code transient} porque {@link Thread} no es
- * serializable. Al deserializar, {@code readObject} inicializa ese mapa vacío.</p>
+ * serializable. Al deserializar, {@code readObject} inicializa ese mapa vacio.</p>
  *
- * <h2>Sincronización — synchronized vs ReentrantLock</h2>
- * <p>Los métodos críticos ({@code recibirDanio}, {@code curar}, {@code setVida},
+ * <h2>Sincronizacion - synchronized vs ReentrantLock</h2>
+ * <p>Los metodos criticos ({@code recibirDanio}, {@code curar}, {@code setVida},
  * {@code aplicarEfecto}, {@code quitarEfecto}) usan {@code synchronized(this)} para
  * proteger la vida, el estado y el mapa de efectos ante accesos concurrentes desde
  * {@link EfectoContinuoTask}.</p>
  *
- * <p>A continuación se documenta la alternativa con {@link ReentrantLock}:</p>
+ * <p>A continuacion se documenta la alternativa con {@link ReentrantLock}:</p>
  * <pre>{@code
  * // Alternativa con ReentrantLock en recibirDanio:
  * private final transient ReentrantLock vidaLock = new ReentrantLock();
@@ -91,13 +91,13 @@ public abstract class Personaje implements ICombatiente, Serializable {
     private Gremio gremio;              // asociacion bidireccional 0..1
     private final Inventario<Pocion> inventario = new Inventario<>(CAPACIDAD_INVENTARIO); // composicion
     private final HashSet<String> habilidades = new HashSet<>();
-    // LinkedHashMap es Serializable; EstadoEfecto también lo es.
+    // LinkedHashMap es Serializable; EstadoEfecto tambien lo es.
     private final LinkedHashMap<String, EstadoEfecto> efectos = new LinkedHashMap<>();
 
     /**
      * Mapa de hilos de efectos continuos activos.
      * Es {@code transient} porque {@link Thread} no implementa {@link Serializable}.
-     * Al deserializar, se reinicializa como mapa vacío mediante {@link #readObject}.
+     * Al deserializar, se reinicializa como mapa vacio mediante {@link #readObject}.
      */
     private transient Map<String, Thread> hilosEfectos;
 
@@ -130,7 +130,7 @@ public abstract class Personaje implements ICombatiente, Serializable {
 
     /**
      * Restaura campos {@code transient} al deserializar desde disco.
-     * Sin este método, {@code hilosEfectos} sería {@code null} tras la carga.
+     * Sin este metodo, {@code hilosEfectos} seria {@code null} tras la carga.
      */
     @Serial
     private void readObject(java.io.ObjectInputStream in)
@@ -177,11 +177,11 @@ public abstract class Personaje implements ICombatiente, Serializable {
     /**
      * Reduce la vida del personaje en la cantidad indicada, de forma segura para hilos.
      *
-     * <h3>¿Por qué synchronized?</h3>
-     * <p>Sin sincronización, dos hilos (p.ej. {@link EfectoContinuoTask} A y B) pueden
+     * <h3>Por que synchronized?</h3>
+     * <p>Sin sincronizacion, dos hilos (p.ej. {@link EfectoContinuoTask} A y B) pueden
      * leer el mismo valor de {@code vida}, calcular sus restas por separado y escribir
-     * resultados incorrectos (read-modify-write no atómico).
-     * El monitor de {@code this} garantiza exclusión mutua.</p>
+     * resultados incorrectos (read-modify-write no atomico).
+     * El monitor de {@code this} garantiza exclusion mutua.</p>
      *
      * <h3>Alternativa con ReentrantLock (documentada)</h3>
      * <pre>{@code
@@ -198,7 +198,7 @@ public abstract class Personaje implements ICombatiente, Serializable {
      * }
      * }</pre>
      *
-     * @param cantidad puntos de daño a aplicar (debe ser ≥ 0)
+     * @param cantidad puntos de dano a aplicar (debe ser >= 0)
      */
     public synchronized void recibirDanio(int cantidad) {
         if (cantidad < 0) {
@@ -269,7 +269,7 @@ public abstract class Personaje implements ICombatiente, Serializable {
      * Aplica un efecto continuo sobre el personaje lanzando un {@link EfectoContinuoTask}
      * en un hilo dedicado.
      *
-     * <p>El método es {@code synchronized} para proteger el mapa {@code efectos} y el
+     * <p>El metodo es {@code synchronized} para proteger el mapa {@code efectos} y el
      * mapa {@code hilosEfectos} de modificaciones concurrentes.</p>
      */
     public synchronized void aplicarEfecto(EstadoEfecto efecto) {
@@ -313,14 +313,14 @@ public abstract class Personaje implements ICombatiente, Serializable {
      * Aplica un tick de cada efecto activo de forma secuencial (compatibilidad con {@link com.rpg.core.Arena}).
      *
      * <p><strong>Nota:</strong> En el nuevo modelo de concurrencia, los efectos se procesan
-     * mediante hilos {@link EfectoContinuoTask}. Este método se conserva para mantener
+     * mediante hilos {@link EfectoContinuoTask}. Este metodo se conserva para mantener
      * compatibilidad con {@link com.rpg.core.Arena#iniciarTurno} cuando no hay hilos activos.</p>
      *
      * @return mensajes para el registro de combate
      */
     public synchronized List<String> procesarEfectos() {
         // TALLER CONCURRENCIA: en el modelo concurrente, los efectos corren como hilos
-        // EfectoContinuoTask. Este método queda como compatibilidad para el modo secuencial.
+        // EfectoContinuoTask. Este metodo queda como compatibilidad para el modo secuencial.
         List<String> mensajes = new ArrayList<>();
         Iterator<EstadoEfecto> iterador = efectos.values().iterator();
         while (iterador.hasNext()) {

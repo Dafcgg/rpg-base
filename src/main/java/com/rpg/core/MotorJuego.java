@@ -21,7 +21,7 @@ import java.util.OptionalInt;
 import java.util.Random;
 
 /**
- * Coordina el flujo del juego: crear héroe, combatir, torneo, bestiario,
+ * Coordina el flujo del juego: crear heroe, combatir, torneo, bestiario,
  * temporizador de turnos concurrente y persistencia en disco (manual y autoguardado en segundo plano).
  */
 public class MotorJuego {
@@ -39,7 +39,7 @@ public class MotorJuego {
     private final Gremio gremio = new Gremio(NOMBRE_GREMIO);
     private final TorneoManager torneo = new TorneoManager(arena, registro);
 
-    // Módulos de Concurrencia y Persistencia
+    // Modulos de Concurrencia y Persistencia
     private final GestorTurno gestorTurno = new GestorTurno(SEGUNDOS_TURNO);
     private final GestorPartidas gestorPartidas = new GestorPartidas();
     private final AutoGuardadoDaemon daemonAutoGuardado;
@@ -50,16 +50,27 @@ public class MotorJuego {
         this.consola = consola;
         this.gestorPartidas.setPerfilActual(this.perfil);
 
-        // Inicialización del AutoGuardadoDaemon como hilo daemon de fondo
+        // Inicializacion del AutoGuardadoDaemon como hilo daemon de fondo
         this.daemonAutoGuardado = new AutoGuardadoDaemon(this.gestorPartidas, INTERVALO_AUTOGUARDADO_MS);
         this.daemonAutoGuardado.setDaemon(true); // OBLIGATORIO: invocado antes de start()
         this.daemonAutoGuardado.start();
     }
 
-    // ---- opciones del menú principal
+    // ---- opciones del menu principal
 
     public void combateRapido() {
         ejecutarCombate(crearJugador());
+    }
+
+    public void combateRapidoCon(Personaje jugador) {
+        if (jugador == null) {
+            throw new IllegalArgumentException("El personaje no puede ser null.");
+        }
+        entregarKitInicial(jugador);
+        jugador.unirseAGremio(gremio);
+        System.out.printf("%s se une al gremio %s (%d miembros).%n",
+                jugador.getNombre(), gremio.getNombre(), gremio.getMiembros().size());
+        ejecutarCombate(jugador);
     }
 
     private void ejecutarCombate(Personaje jugador) {
@@ -139,7 +150,7 @@ public class MotorJuego {
         return gestorPartidas.eliminarPartida();
     }
 
-    // ---- creación de personajes
+    // ---- creacion de personajes
 
     private Personaje crearJugador() {
         int clase = consola.leerEntero("Clase (1. Guerrero, 2. Mago): ", 1, 2);
@@ -242,11 +253,11 @@ public class MotorJuego {
     }
 
     /**
-     * Solicita la acción del jugador integrando un temporizador en hilo concurrente.
-     * Si el jugador ingresa su opción a tiempo, el temporizador se cancela con interrupt().
+     * Solicita la accion del jugador integrando un temporizador en hilo concurrente.
+     * Si el jugador ingresa su opcion a tiempo, el temporizador se cancela con interrupt().
      * Si el tiempo expira, la bandera se marca y el jugador pierde el turno.
      *
-     * @return La {@link Accion} seleccionada, o {@code null} si el tiempo se agotó.
+     * @return La {@link Accion} seleccionada, o {@code null} si el tiempo se agoto.
      */
     private Accion pedirAccion() {
         // El temporizador despierta la lectura de consola: no hace falta pulsar Enter tarde.
@@ -341,7 +352,7 @@ public class MotorJuego {
     // ---- guardado
 
     /**
-     * Guarda el estado en memoria y delega la sincronización de persistencia
+     * Guarda el estado en memoria y delega la sincronizacion de persistencia
      * con {@link GestorPartidas}.
      */
     public void guardarProgreso() {
@@ -358,7 +369,7 @@ public class MotorJuego {
         ultimoGuardado = contenido.toString();
         System.out.println("[Progreso actualizado en memoria]");
 
-        // Persistir también a disco de forma sincronizada
+        // Persistir tambien a disco de forma sincronizada
         gestorPartidas.guardarPerfil(perfil);
     }
 

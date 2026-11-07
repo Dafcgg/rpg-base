@@ -204,3 +204,54 @@ no borra el efecto nuevo. Cubre los tres finales: ticks agotados, muerte del obj
 | 13 | README con informacion de funciones retiradas | `README.md` actualizado a la version actual del proyecto | - |
 | 14 | Caracter `-` largo (raya) en un mensaje de consola de `DryRunSuite` | Sustituido por `-` ASCII; prueba de estilo ampliada | 5 (estilo) |
 
+## Unidad 5.2 - Registro de heroes persistente
+
+### Flujo de capas (MVC)
+
+```text
++----------+     +------------------+     +----------+     +-----------+     +---------+
+| HeroeUI  | --> | HeroeController  | --> | HeroeDAO | --> | ConexionDB| --> | MySQL   |
+| (View)   |     | (validaciones,   |     | (Prepared|     | (config.  |     | heroes  |
+| consola  | <-- |  convertirAEntity)| <-- |  Stmt ?) | <-- |  txt)     | <-- | (BD)    |
++----------+     +------------------+     +----------+     +-----------+     +---------+
+View -> Controller -> DAO -> BD   (la vista nunca importa java.sql ni llama al DAO)
+```
+
+### Secuencia de insercion
+
+```text
+Usuario -> HeroeUI: escribe nombre, tipo, vida maxima y nivel
+HeroeUI -> HeroeController: insertar(datos)
+HeroeController -> HeroeController: valida reglas de negocio
+HeroeController -> HeroeDAO: insertar(Heroe)
+HeroeDAO -> ConexionDB: obtenerConexionGrupal()
+ConexionDB -> config.txt: lee url_grupal, usuario y clave
+HeroeDAO -> MySQL: PreparedStatement con cuatro parametros
+MySQL --> HeroeDAO: filas afectadas e id generado
+HeroeDAO --> HeroeController: resultado de insercion
+HeroeController --> HeroeUI: mensaje y resultado
+```
+
+### Inyeccion SQL y consultas parametrizadas
+
+Al concatenar datos externos en una consulta, el texto recibido puede alterar la estructura SQL:
+
+```java
+String sql = "SELECT id FROM heroes WHERE nombre = '" + nombre + "'";
+```
+
+No se debe construir SQL de esta manera. En el proyecto, `HeroeDAO` separa la plantilla de los valores:
+
+```java
+String sql = "SELECT id FROM heroes WHERE nombre = ?";
+try (PreparedStatement sentencia = conexion.prepareStatement(sql)) {
+    sentencia.setString(1, nombre);
+    try (ResultSet resultado = sentencia.executeQuery()) {
+        // Procesar el resultado mientras los recursos siguen abiertos.
+    }
+}
+```
+
+`PreparedStatement` envia el valor como dato y no como parte de la instruccion SQL. Todos los parametros de
+`HeroeDAO` se enlazan mediante `setString` o `setInt`, y los recursos JDBC se cierran con `try-with-resources`.
+

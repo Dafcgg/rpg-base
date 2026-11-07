@@ -7,7 +7,7 @@ import java.util.Set;
 import java.util.TreeSet;
 
 /**
- * Perfil estadístico del jugador: victorias, derrotas y logros desbloqueados.
+ * Perfil estadistico del jugador: victorias, derrotas y logros desbloqueados.
  *
  * <p>Implementa {@link Serializable} para permitir la persistencia binaria de la partida
  * mediante {@link com.rpg.persistencia.GestorPartidas}.</p>

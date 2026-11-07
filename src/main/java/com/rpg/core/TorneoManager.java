@@ -8,16 +8,16 @@ import com.rpg.entities.Personaje;
 import java.util.List;
 
 /**
- * Torneo de 4 gladiadores: dos semifinales simultáneas en hilos paralelos y una gran final.
+ * Torneo de 4 gladiadores: dos semifinales simultaneas en hilos paralelos y una gran final.
  *
  * <h2>Ciclo de vida de los Hilos en Java</h2>
  * Los estados de un {@link Thread} en la JVM son observados mediante {@link Thread#getState()}:
  * <ul>
  *   <li><b>NEW:</b> El hilo ha sido instanciado pero no se ha invocado {@code start()}.</li>
- *   <li><b>RUNNABLE:</b> El hilo se está ejecutando en la JVM o está listo en la cola del SO.</li>
- *   <li><b>TIMED_WAITING:</b> El hilo está esperando de forma pasiva durante un tiempo acotado
+ *   <li><b>RUNNABLE:</b> El hilo se esta ejecutando en la JVM o esta listo en la cola del SO.</li>
+ *   <li><b>TIMED_WAITING:</b> El hilo esta esperando de forma pasiva durante un tiempo acotado
  *       (por ejemplo, dentro de {@code Thread.sleep()}).</li>
- *   <li><b>TERMINATED:</b> La ejecución del método {@code run()} ha concluido o se interrumpió de forma terminal.</li>
+ *   <li><b>TERMINATED:</b> La ejecucion del metodo {@code run()} ha concluido o se interrumpio de forma terminal.</li>
  * </ul>
  */
 public class TorneoManager {
@@ -33,7 +33,7 @@ public class TorneoManager {
     /**
      * Ejecuta el torneo completo paralelizando las semifinales y sincronizando la final con join().
      *
-     * @return El campeón del torneo, o {@code null} si el torneo se cancela (hilo principal
+     * @return El campeon del torneo, o {@code null} si el torneo se cancela (hilo principal
      *         interrumpido o semifinal sin resultado): nunca se inventa un ganador.
      */
     public Personaje jugarTorneo() {

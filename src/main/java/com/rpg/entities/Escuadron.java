@@ -7,10 +7,10 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Agregación: disolver el escuadron no destruye a los personajes.
+ * Agregacion: disolver el escuadron no destruye a los personajes.
  *
  * <p>Implementa {@link Serializable} para permitir que el estado de un torneo
- * o escuadrón pueda incluirse en un guardado de partida.</p>
+ * o escuadron pueda incluirse en un guardado de partida.</p>
  */
 public class Escuadron implements Serializable {
 

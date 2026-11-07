@@ -1,6 +1,7 @@
 package com.rpg.core;
 
 import java.util.OptionalInt;
+import java.util.Objects;
 import java.util.Scanner;
 
 /** Entrada por teclado con validacion y reintento. */
@@ -14,20 +15,13 @@ public class Consola {
     /** Canal con lectura limitada por tiempo; {@code null} si el Scanner lee directo de System.in. */
     private final EntradaConsola entrada;
 
-    /** Se pone en true cuando el temporizador de turno avisa que el tiempo se agoto. */
-    private volatile boolean tiempoExpirado;
-
-    public Consola(Scanner scanner) {
-        this(scanner, null);
-    }
-
     /**
      * @param scanner scanner construido sobre {@code entrada}
-     * @param entrada flujo que permite abandonar la espera por tiempo (puede ser null)
+     * @param entrada flujo que permite abandonar la espera por tiempo
      */
     public Consola(Scanner scanner, EntradaConsola entrada) {
-        this.scanner = scanner;
-        this.entrada = entrada;
+        this.scanner = Objects.requireNonNull(scanner, "scanner");
+        this.entrada = Objects.requireNonNull(entrada, "entrada");
     }
 
     /**
@@ -35,10 +29,7 @@ public class Consola {
      * Despierta al hilo principal que espera en {@link #leerEnteroConLimite}.
      */
     public void expirarEspera() {
-        tiempoExpirado = true;
-        if (entrada != null) {
-            entrada.expirar();
-        }
+        entrada.expirar();
     }
 
     /**
@@ -48,28 +39,20 @@ public class Consola {
      * @return el numero elegido, o vacio si el tiempo se agoto (o el hilo fue interrumpido)
      */
     public OptionalInt leerEnteroConLimite(String mensaje, int minimo, int maximo) {
-        tiempoExpirado = false;
-        if (entrada != null) {
-            entrada.armar();
-        }
+        entrada.armar();
         try {
             while (true) {
                 System.out.print(mensaje);
-                if (entrada != null) {
-                    try {
-                        if (!entrada.esperarLinea()) {
-                            System.out.println();
-                            return OptionalInt.empty();
-                        }
-                    } catch (InterruptedException e) {
-                        Thread.currentThread().interrupt();
+                try {
+                    if (!entrada.esperarLinea()) {
+                        System.out.println();
                         return OptionalInt.empty();
                     }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return OptionalInt.empty();
                 }
                 String texto = scanner.nextLine().trim();
-                if (entrada == null && tiempoExpirado) {
-                    return OptionalInt.empty(); // sin canal especial: la respuesta tardia se descarta
-                }
                 if (texto.isEmpty()) {
                     System.out.println("No escribiste nada.");
                     continue;
@@ -85,9 +68,7 @@ public class Consola {
                 }
             }
         } finally {
-            if (entrada != null) {
-                entrada.desarmar();
-            }
+            entrada.desarmar();
         }
     }
 

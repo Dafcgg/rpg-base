@@ -4,12 +4,14 @@ Simulador de combate por consola en **Java 21** que reune cuatro entregas del pr
 
 - **Taller de Concurrencia (Unidades 4.1 y 4.2):** temporizador de turno, efectos DoT/HoT en hilos, torneo con semifinales en paralelo y auto-guardado en un hilo daemon.
 - **Taller de Persistencia en Archivos:** historial de combates en texto, guardado y carga de partida con serializacion segura.
+- **Unidad 5.2 (JDBC + MVC):** registro persistente de heroes en MySQL y conversion a entidades de combate.
 - **Base del juego:** el simulador de los talleres 1 a 8 (POO, colecciones, excepciones, genericos).
 
 ## Requisitos
 
 - JDK 21
 - Maven 3.9+ (opcional si compilas con `javac`)
+- MySQL 8.0.16 o posterior
 
 ## Como compilar y ejecutar
 
@@ -17,10 +19,10 @@ Con Maven:
 
 ```
 mvn -q compile
-java -cp target/classes com.rpg.Main
+mvn org.codehaus.mojo:exec-maven-plugin:3.5.0:java -Dexec.mainClass=com.rpg.Main
 ```
 
-Solo con `javac` (desde la carpeta del proyecto):
+Para compilar fuentes sin Maven (desde la carpeta del proyecto):
 
 ```
 javac -encoding UTF-8 -Xlint:all -d out $(find src/main/java -name "*.java")
@@ -40,29 +42,35 @@ java -cp out:out-test com.rpg.test.DryRunSuite
 
 (En Windows usa `;` en lugar de `:` en el classpath.) Debe terminar con `0 fallidas`.
 
-## Menu principal
+## Configuracion de MySQL
+
+1. Ejecuta `schema_grupal.sql` en MySQL para crear `rpg_grupal_db` y cargar heroes de demostracion.
+2. Copia `config.example.txt` como `config.txt` y completa usuario y clave.
+3. `config.txt` esta excluido por `.gitignore` y no debe subirse al repositorio.
+
+El `DROP TABLE IF EXISTS heroes` del esquema esta comentado para proteger los datos existentes.
+
+## Menu del registro de heroes
 
 | Opcion | Funcion |
 |---|---|
-| 1 | Combate rapido (con temporizador de turno de 15 s) |
-| 2 | Torneo: 4 gladiadores, 2 semifinales en hilos paralelos y gran final |
-| 3 | Bestiario local |
-| 4 / 5 | Guardar / cargar partida (`partidas/perfil_jugador.dat`) |
-| 6 | Ver historial de combates (`historial_combates.txt`) |
-| 7 | Borrar partida guardada (con confirmacion) |
-
-### Temporizador de turno
-
-En cada turno del combate rapido el jugador tiene 15 segundos. Si responde a tiempo, el temporizador se cancela con `interrupt()`.
-Si el tiempo se agota, **el juego continua automaticamente**: el turno se pierde y ataca el enemigo, sin que el jugador tenga que pulsar Enter
-(la lectura de teclado se abandona por tiempo; ver `EntradaConsola`). Una linea escrita tarde no se pierde: la consume la siguiente lectura.
+| 1 | Insertar heroe |
+| 2 | Listar heroes |
+| 3 | Buscar por tipo |
+| 4 | Actualizar nivel |
+| 5 | Eliminar heroe |
+| 6 | Cargar heroe de MySQL y combatir con su tipo, vida maxima y nivel |
+| 0 | Salir |
 
 ## Estructura de paquetes
 
 ```
 com.rpg
-  Main                      una sola linea: new MenuPrincipalUI().iniciar()
-  view/                     MenuPrincipalUI
+  Main                      una sola linea: new HeroeUI().iniciar()
+  view/                     HeroeUI (Scanner + Controller, sin JDBC)
+  controller/               validaciones y conversion de Heroe a Personaje
+  dao/                      ConexionDB y HeroeDAO (PreparedStatement)
+  model/                    POJO Heroe
   core/                     flujo del juego
     MotorJuego, Arena, TorneoManager, Bestiario, RegistroCombate, FormatoCombate, Accion,
     Consola, EntradaConsola (lectura con limite de tiempo), TurnoCallback
@@ -77,9 +85,8 @@ com.rpg
 
 ## Documentacion
 
-`INFORME.md` documenta las correcciones de concurrencia y persistencia, la teoria de archivos
-(rutas, `createNewFile`, `serialVersionUID`, `NotSerializableException`, `FileWriter` vs `Files.writeString`)
-y la tabla de hallazgos de auditoria y su solucion.
+`INFORME.md` documenta la secuencia MVC de insercion, la proteccion de consultas con
+`PreparedStatement` y las correcciones de concurrencia y persistencia en archivos.
 
 ## Lo que ya debes tener (checklist base)
 

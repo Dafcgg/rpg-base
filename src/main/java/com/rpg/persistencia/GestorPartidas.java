@@ -21,43 +21,43 @@ import java.nio.file.Paths;
  * <h2>Estructura de archivos</h2>
  * <pre>
  * partidas/
- *   perfil_jugador.dat    ← guardado principal del perfil
- *   perfil_auto.dat       ← guardado automático del daemon
+ *   perfil_jugador.dat    <- guardado principal del perfil
+ *   perfil_auto.dat       <- guardado automatico del daemon
  * </pre>
  *
- * <h2>Sincronización</h2>
+ * <h2>Sincronizacion</h2>
  * <p>Todas las operaciones de E/S se realizan dentro de bloques
  * {@code synchronized(lock)} para evitar colisiones entre el guardado manual
  * del usuario y el {@link com.rpg.concurrency.AutoGuardadoDaemon}.</p>
  *
- * <h2>FileWriter vs Files.writeString — Comparativa</h2>
+ * <h2>FileWriter vs Files.writeString - Comparativa</h2>
  * <ul>
  *   <li><strong>{@code FileWriter} + {@code BufferedWriter}:</strong> Escribe con
- *       búfer; ideal para escrituras incrementales (append de logs). El búfer
+ *       bufer; ideal para escrituras incrementales (append de logs). El bufer
  *       acumula bytes hasta que se llama a {@code flush()} o {@code close()}.
- *       Mejor rendimiento en escrituras frecuentes y pequeñas.</li>
+ *       Mejor rendimiento en escrituras frecuentes y pequenas.</li>
  *   <li><strong>{@code Files.writeString} (NIO):</strong> Escribe todo el contenido
- *       de golpe (atómico a nivel de API, aunque el SO no garantiza atomicidad en
+ *       de golpe (atomico a nivel de API, aunque el SO no garantiza atomicidad en
  *       disco). Conveniente para escribir un String completo de una sola vez.
  *       Internamente abre, escribe y cierra el canal en una sola llamada.</li>
- *   <li><strong>Regla práctica:</strong> usa {@code BufferedWriter} para streams
- *       con muchas escrituras pequeñas (historial de combate línea a línea);
+ *   <li><strong>Regla practica:</strong> usa {@code BufferedWriter} para streams
+ *       con muchas escrituras pequenas (historial de combate linea a linea);
  *       usa {@code Files.writeString} cuando quieras escribir texto completo
  *       de forma concisa y la frecuencia de escritura es baja.</li>
  * </ul>
  *
- * <h2>Seguridad en Serialización</h2>
- * <p>{@code ObjectInputStream.readObject()} puede ejecutar bloques de código
- * arbitrario a través del mecanismo de {@code readObject()} personalizado en
+ * <h2>Seguridad en Serializacion</h2>
+ * <p>{@code ObjectInputStream.readObject()} puede ejecutar bloques de codigo
+ * arbitrario a traves del mecanismo de {@code readObject()} personalizado en
  * clases maliciosas (gadget chains). Riesgos:</p>
  * <ul>
- *   <li>Ejecución remota de código (RCE) si se deserializa de fuentes no confiables.</li>
- *   <li>Denegación de servicio (DoS) por objetos que consumen memoria excesiva.</li>
+ *   <li>Ejecucion remota de codigo (RCE) si se deserializa de fuentes no confiables.</li>
+ *   <li>Denegacion de servicio (DoS) por objetos que consumen memoria excesiva.</li>
  * </ul>
- * <p><strong>Alternativas más seguras:</strong></p>
+ * <p><strong>Alternativas mas seguras:</strong></p>
  * <ul>
  *   <li>Formatos planos (CSV, properties) para datos simples.</li>
- *   <li>JSON (Jackson, Gson) con clases POJO explícitas — sin código ejecutable.</li>
+ *   <li>JSON (Jackson, Gson) con clases POJO explicitas - sin codigo ejecutable.</li>
  *   <li>Usar {@code ObjectInputFilter} (Java 9+) para permitir solo clases esperadas.</li>
  * </ul>
  */
@@ -75,10 +75,10 @@ public class GestorPartidas {
     private static final ObjectInputFilter FILTRO_DESERIALIZACION =
             ObjectInputFilter.Config.createFilter("com.rpg.**;java.base/*;!*");
 
-    /** Lock de sincronización compartido entre guardado manual y daemon. */
+    /** Lock de sincronizacion compartido entre guardado manual y daemon. */
     private final Object lock = new Object();
 
-    /** Referencia volátil al perfil activo para el daemon de autoguardado. */
+    /** Referencia volatil al perfil activo para el daemon de autoguardado. */
     private volatile PerfilJugador perfilActual;
 
     public GestorPartidas() {
@@ -92,13 +92,13 @@ public class GestorPartidas {
         }
     }
 
-    // ─────────────────────────────────────────────────────────
+    // ---------------------------------------------------------
     // Guardado y carga del perfil del jugador
-    // ─────────────────────────────────────────────────────────
+    // ---------------------------------------------------------
 
     /**
      * Registra el perfil activo para que el daemon de autoguardado pueda
-     * persistirlo sin necesidad de parámetros adicionales.
+     * persistirlo sin necesidad de parametros adicionales.
      *
      * @param perfil perfil a mantener en memoria
      */
@@ -195,9 +195,9 @@ public class GestorPartidas {
         }
     }
 
-    // ─────────────────────────────────────────────────────────
-    // Metadatos y gestión de archivos
-    // ─────────────────────────────────────────────────────────
+    // ---------------------------------------------------------
+    // Metadatos y gestion de archivos
+    // ---------------------------------------------------------
 
     /**
      * Muestra metadatos del archivo de partida guardada.
@@ -249,7 +249,7 @@ public class GestorPartidas {
      * Elimina la partida guardada principal (con {@code Files.deleteIfExists}) y el autoguardado
      * (con {@code File.delete()}).
      *
-     * @return {@code true} si se eliminó con éxito la partida principal
+     * @return {@code true} si se elimino con exito la partida principal
      */
     public boolean eliminarPartida() {
         synchronized (lock) {
@@ -281,9 +281,9 @@ public class GestorPartidas {
         }
     }
 
-    // ─────────────────────────────────────────────────────────
+    // ---------------------------------------------------------
     // Serializacion de un Personaje completo (agregacion/composicion)
-    // ─────────────────────────────────────────────────────────
+    // ---------------------------------------------------------
 
     /**
      * Serializa un {@link Personaje} con todo su grafo: arma (agregacion), gremio (asociacion

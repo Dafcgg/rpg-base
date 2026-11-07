@@ -5,17 +5,17 @@ import com.rpg.entities.Personaje;
 
 /**
  * Tarea {@link Runnable} que aplica el tick de un {@link EstadoEfecto} de forma
- * continua y periódica sobre un {@link Personaje}, reemplazando el procesamiento
+ * continua y periodica sobre un {@link Personaje}, reemplazando el procesamiento
  * por turnos de {@code Personaje.procesarEfectos()}.
  *
- * <h2>Patrón de interrupción segura</h2>
+ * <h2>Patron de interrupcion segura</h2>
  * <ul>
  *   <li>El bucle principal comprueba {@code Thread.currentThread().isInterrupted()}
- *       en cada iteración.</li>
+ *       en cada iteracion.</li>
  *   <li>Cuando {@link Thread#sleep(long)} lanza {@link InterruptedException}:
  *     <ol>
  *       <li>Se elimina el efecto del personaje para dejar el estado consistente.</li>
- *       <li>Se restaura la bandera de interrupción con
+ *       <li>Se restaura la bandera de interrupcion con
  *           {@code Thread.currentThread().interrupt()}.</li>
  *       <li>Se sale del bucle con {@code break}.</li>
  *     </ol>
@@ -23,8 +23,8 @@ import com.rpg.entities.Personaje;
  * </ul>
  *
  * <h2>Thread-safety</h2>
- * Los métodos críticos de {@code Personaje} ({@code recibirDanio}, {@code curar},
- * {@code quitarEfecto}) están sincronizados, por lo que esta tarea puede correr
+ * Los metodos criticos de {@code Personaje} ({@code recibirDanio}, {@code curar},
+ * {@code quitarEfecto}) estan sincronizados, por lo que esta tarea puede correr
  * concurrentemente con otras tareas de efecto o con el hilo principal.
  */
 public class EfectoContinuoTask implements Runnable {
@@ -36,8 +36,8 @@ public class EfectoContinuoTask implements Runnable {
     private final EstadoEfecto efecto;
 
     /**
-     * @param objetivo personaje que recibirá el efecto periódico
-     * @param efecto   efecto a aplicar (se usa una copia interna para evitar mutación externa)
+     * @param objetivo personaje que recibira el efecto periodico
+     * @param efecto   efecto a aplicar (se usa una copia interna para evitar mutacion externa)
      */
     public EfectoContinuoTask(Personaje objetivo, EstadoEfecto efecto) {
         this.objetivo = objetivo;
@@ -88,7 +88,7 @@ public class EfectoContinuoTask implements Runnable {
         }
     }
 
-    /** Aplica un tick de daño o curación según el tipo de efecto. */
+    /** Aplica un tick de dano o curacion segun el tipo de efecto. */
     private void aplicarTick() {
         int valor = efecto.getValorPorTick();
         if (efecto.esDanio()) {

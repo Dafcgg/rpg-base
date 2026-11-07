@@ -7,12 +7,12 @@ import java.io.Serial;
 import java.io.Serializable;
 
 /**
- * Poción consumible del inventario del jugador.
+ * Pocion consumible del inventario del jugador.
  *
  * <p>Implementa {@link Serializable} porque forma parte del inventario del personaje,
- * que se incluye en el grafo de serialización al guardar la partida.</p>
+ * que se incluye en el grafo de serializacion al guardar la partida.</p>
  */
-// TALLER ARCHIVOS: implementa Serializable (guarda un EstadoEfecto, que también debe serlo).
+// TALLER ARCHIVOS: implementa Serializable (guarda un EstadoEfecto, que tambien debe serlo).
 public class Pocion implements Serializable {
 
     @Serial

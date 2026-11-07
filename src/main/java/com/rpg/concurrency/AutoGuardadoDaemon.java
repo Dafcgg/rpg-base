@@ -3,25 +3,25 @@ package com.rpg.concurrency;
 import com.rpg.persistencia.GestorPartidas;
 
 /**
- * Hilo daemon que guarda el estado de la partida en disco periódicamente,
+ * Hilo daemon que guarda el estado de la partida en disco periodicamente,
  * liberando al jugador de tener que hacerlo manualmente.
  *
- * <h2>Hilos Daemon — Teoría</h2>
- * <p>En la JVM existen dos categorías de hilos:</p>
+ * <h2>Hilos Daemon - Teoria</h2>
+ * <p>En la JVM existen dos categorias de hilos:</p>
  * <ul>
  *   <li><strong>Hilos de usuario (non-daemon):</strong> La JVM espera a que todos
- *       terminen antes de apagar la máquina virtual. Son los hilos "importantes".</li>
- *   <li><strong>Hilos daemon:</strong> La JVM los mata automáticamente cuando ya no
+ *       terminen antes de apagar la maquina virtual. Son los hilos "importantes".</li>
+ *   <li><strong>Hilos daemon:</strong> La JVM los mata automaticamente cuando ya no
  *       quedan hilos de usuario vivos. No impiden el cierre de la JVM.</li>
  * </ul>
  *
- * <h2>¿Por qué setDaemon(true) ANTES de start()?</h2>
+ * <h2>Por que setDaemon(true) ANTES de start()?</h2>
  * <p>Una vez que se llama a {@link Thread#start()}, el hilo pasa al estado
- * {@code RUNNABLE} y la JVM lo registra en su árbol de hilos. Cambiar la naturaleza
- * daemon de un hilo en ejecución es una operación inválida porque alteraría el
- * recuento de hilos de usuario que la JVM usa para decidir cuándo apagarse.
+ * {@code RUNNABLE} y la JVM lo registra en su arbol de hilos. Cambiar la naturaleza
+ * daemon de un hilo en ejecucion es una operacion invalida porque alteraria el
+ * recuento de hilos de usuario que la JVM usa para decidir cuando apagarse.
  * Por eso {@link Thread#setDaemon(boolean)} lanza {@link IllegalThreadStateException}
- * si se llama después de {@code start()}.</p>
+ * si se llama despues de {@code start()}.</p>
  *
  * <pre>{@code
  * // CORRECTO
@@ -34,10 +34,10 @@ import com.rpg.persistencia.GestorPartidas;
  * daemon.setDaemon(true);  // ERROR
  * }</pre>
  *
- * <h2>Sincronización con GestorPartidas</h2>
+ * <h2>Sincronizacion con GestorPartidas</h2>
  * <p>El guardado se delega a {@link GestorPartidas#guardarPerfilAutomatico}, que
- * sincroniza internamente sobre su lock privado. Así, si el usuario también guarda
- * manualmente desde el menú, no habrá corrupción del archivo.</p>
+ * sincroniza internamente sobre su lock privado. Asi, si el usuario tambien guarda
+ * manualmente desde el menu, no habra corrupcion del archivo.</p>
  */
 public class AutoGuardadoDaemon extends Thread {
 
@@ -49,7 +49,7 @@ public class AutoGuardadoDaemon extends Thread {
      * es responsable de llamar a {@code setDaemon(true)} y luego a {@code start()}.
      *
      * @param gestorPartidas gestor de persistencia (thread-safe)
-     * @param intervaloMs    milisegundos entre guardados automáticos
+     * @param intervaloMs    milisegundos entre guardados automaticos
      */
     public AutoGuardadoDaemon(GestorPartidas gestorPartidas, long intervaloMs) {
         super("auto-guardado-daemon");
@@ -60,7 +60,7 @@ public class AutoGuardadoDaemon extends Thread {
     @Override
     public void run() {
         System.out.printf("[AutoGuardado] Daemon iniciado (intervalo: %d ms)%n", intervaloMs);
-        while (true) {
+        while (!Thread.currentThread().isInterrupted()) {
             try {
                 Thread.sleep(intervaloMs);
                 gestorPartidas.guardarPerfilAutomatico();

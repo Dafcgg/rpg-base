@@ -12,15 +12,15 @@ import java.io.IOException;
  * Imprime cada evento del combate y lo guarda para incluirlo en el guardado de la partida
  * y en el historial persistente en disco.
  *
- * <h2>Investigación Teórica: FileWriter vs Files.writeString</h2>
+ * <h2>Investigacion Teorica: FileWriter vs Files.writeString</h2>
  * <ul>
  *   <li><b>FileWriter + BufferedWriter:</b>
- *     Trabaja con un búfer intermedio en memoria (típicamente 8 KB). Cada llamada a {@code write()}
- *     o {@code newLine()} escribe en dicho búfer y solo descarga físicamente al disco (flush) cuando
- *     el búfer se llena o se invoca {@code flush()}/{@code close()}.
- *     Es óptimo para flujos continuos, logs secuenciales en tiempo real o archivos que crecen
- *     progresivamente con múltiples operaciones de escritura pequeñas, minimizando llamadas de sistema (syscalls).
- *     Con {@code new FileWriter(file, true)} permite fácilmente el modo <i>append</i> (adición al final).
+ *     Trabaja con un bufer intermedio en memoria (tipicamente 8 KB). Cada llamada a {@code write()}
+ *     o {@code newLine()} escribe en dicho bufer y solo descarga fisicamente al disco (flush) cuando
+ *     el bufer se llena o se invoca {@code flush()}/{@code close()}.
+ *     Es optimo para flujos continuos, logs secuenciales en tiempo real o archivos que crecen
+ *     progresivamente con multiples operaciones de escritura pequenas, minimizando llamadas de sistema (syscalls).
+ *     Con {@code new FileWriter(file, true)} permite facilmente el modo <i>append</i> (adicion al final).
  *   </li>
  *   <li><b>Files.writeString (Java NIO.2):</b>
  *     Es un metodo de conveniencia de un solo paso que toma un {@link CharSequence} completo, abre el
@@ -60,7 +60,7 @@ public class RegistroCombate {
     }
 
     /**
-     * Vuelca el contenido acumulado de la sesión de combate actual al archivo por defecto
+     * Vuelca el contenido acumulado de la sesion de combate actual al archivo por defecto
      * en modo append usando {@link BufferedWriter} y {@link FileWriter}.
      */
     public void volcarAArchivo() {
@@ -78,12 +78,15 @@ public class RegistroCombate {
         if (contenido.isEmpty()) {
             return;
         }
+        String separador = System.lineSeparator();
+        if (contenido.endsWith(separador)) {
+            contenido = contenido.substring(0, contenido.length() - separador.length());
+        }
         File archivo = new File(rutaArchivo);
         synchronized (LOCK_ARCHIVO) {
             try (BufferedWriter bw = new BufferedWriter(new FileWriter(archivo, true))) {
                 bw.write(contenido);
                 bw.newLine();
-                bw.flush();
                 System.out.println("[RegistroCombate] Historial volcado exitosamente a: " + archivo.getAbsolutePath());
             } catch (IOException e) {
                 System.err.println("[RegistroCombate] Error de E/S al volcar historial: " + e.getMessage());
@@ -93,7 +96,7 @@ public class RegistroCombate {
 
     /**
      * Lee e imprime el historial de combates desde el archivo por defecto usando {@link BufferedReader}.
-     * Captura específicamente {@link FileNotFoundException} si aún no existe historial.
+     * Captura especificamente {@link FileNotFoundException} si aun no existe historial.
      */
     public static void leerHistorial() {
         leerHistorial(ARCHIVO_HISTORIAL_DEFECTO);

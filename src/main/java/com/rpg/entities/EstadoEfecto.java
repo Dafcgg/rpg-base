@@ -6,7 +6,7 @@ import java.io.Serial;
 import java.io.Serializable;
 
 /**
- * Efecto periódico (DoT o HoT): cambia la vida un valor fijo en cada tick durante cierta duración.
+ * Efecto periodico (DoT o HoT): cambia la vida un valor fijo en cada tick durante cierta duracion.
  *
  * <p>Implementa {@link Serializable} porque es referenciado desde {@link Personaje} (campo
  * {@code efectos}) y desde {@link com.rpg.items.Pocion} (campo {@code efecto}),

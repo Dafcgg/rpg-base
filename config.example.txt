@@ -1,0 +1,5 @@
+# Copy this file to config.txt and enter your local MySQL credentials.
+url=jdbc:mysql://localhost:3306/rpg_grupal_db
+url_grupal=jdbc:mysql://localhost:3306/rpg_grupal_db
+usuario=TU_USUARIO
+clave=CAMBIAR_POR_TU_CLAVE

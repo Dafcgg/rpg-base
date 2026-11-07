@@ -1,11 +1,11 @@
 package com.rpg;
 
-import com.rpg.view.MenuPrincipalUI;
+import com.rpg.view.HeroeUI;
 
-/** Punto de entrada: unicamente arranca la vista principal (MVC estricto). */
+/** Starts the hero registry view. */
 public class Main {
 
     public static void main(String[] args) {
-        new MenuPrincipalUI().iniciar();
+        new HeroeUI().iniciar();
     }
 }
