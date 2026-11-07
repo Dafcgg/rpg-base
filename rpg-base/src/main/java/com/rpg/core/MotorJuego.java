@@ -46,13 +46,6 @@ public class MotorJuego {
 
     private String ultimoGuardado = "";
 
-    // --- Integracion con modulo Arena Segura (Unidad 5.2) ---
-    /** Nombre del ultimo enemigo contra el que se combatio (para registrar victoria en BD). */
-    private String ultimoEnemigoNombre = null;
-
-    /** true si el jugador gano el ultimo combate rapido (no huyo ni fue derrotado). */
-    private boolean ganadoUltimoCombate = false;
-
     public MotorJuego(Consola consola) {
         this.consola = consola;
         this.gestorPartidas.setPerfilActual(this.perfil);
@@ -69,30 +62,13 @@ public class MotorJuego {
         ejecutarCombate(crearJugador());
     }
 
-    /**
-     * Combate rapido con un personaje ya creado (por ejemplo, un heroe cargado desde la BD).
-     * Le entrega el kit inicial y lo une al gremio antes de elegir rival.
-     */
-    public void combateRapidoCon(Personaje heroe) {
-        entregarKitInicial(heroe);
-        heroe.unirseAGremio(gremio);
-        System.out.printf("%s se une al gremio %s (%d miembros).%n",
-                heroe.getNombre(), gremio.getNombre(), gremio.getMiembros().size());
-        ejecutarCombate(heroe);
-    }
-
     private void ejecutarCombate(Personaje jugador) {
         registro.limpiar();
         Enemigo enemigo = elegirEnemigo();
-        // Guardar nombre del enemigo para integracion con BD (Unidad 5.2)
-        ultimoEnemigoNombre  = enemigo.getNombre();
-        ganadoUltimoCombate  = false;
         registro.agregar("%n=== %s vs %s ===", jugador.getNombre(), enemigo.getNombre());
 
         boolean huyo = combatir(jugador, enemigo);
 
-        // Registrar si el jugador gano (no huyo ni fue derrotado)
-        ganadoUltimoCombate = !huyo && jugador.estaVivo();
         cerrarCombate(jugador, enemigo, huyo);
         guardarProgreso();
         // Volcar registro de combate al historial de texto
@@ -394,20 +370,4 @@ public class MotorJuego {
         return perfil;
     }
 
-    /**
-     * Retorna el nombre del ultimo enemigo seleccionado en un combate rapido.
-     * Usado por {@code Main} para intentar registrar la victoria en la BD.
-     *
-     * @return nombre del enemigo o null si no se ha combatido aun
-     */
-    public String getUltimoEnemigoNombre() {
-        return ultimoEnemigoNombre;
-    }
-
-    /**
-     * @return true si el jugador gano el ultimo combate rapido (no huyo ni fue derrotado)
-     */
-    public boolean ganoElUltimoCombate() {
-        return ganadoUltimoCombate;
-    }
 }

@@ -58,6 +58,10 @@ import java.util.concurrent.locks.ReentrantLock;
  * La desventaja es mayor verbosidad y el riesgo de olvidar el {@code unlock()} en {@code finally}.
  * La version implementada esta en {@link #recibirDanioConLock(int)}; el mecanismo principal sigue siendo
  * {@code synchronized}.</p>
+ *
+ * <p>{@code AtomicInteger} no basta para esta entidad: solo haria atomica la actualizacion de
+ * {@code vida}, pero no la transicion coordinada de {@code estado} ni los cambios relacionados
+ * en el mapa {@code efectos}. El monitor comun protege esos invariantes como una sola operacion.</p>
  */
 // TALLER ARCHIVOS: Personaje es Serializable con serialVersionUID. Los campos de hilo son transient.
 public abstract class Personaje implements ICombatiente, Serializable {
@@ -71,6 +75,7 @@ public abstract class Personaje implements ICombatiente, Serializable {
     private static final int CAPACIDAD_INVENTARIO = 3;
     private static final int DANIO_MINIMO = 1;
     private static final double PORCENTAJE_TOTAL = 100.0;
+    private static final String PATRON_NOMBRE = "[A-Za-z0-9 ]+";
 
     private String nombre;
     private final TipoPersonaje tipo;
@@ -118,8 +123,8 @@ public abstract class Personaje implements ICombatiente, Serializable {
     }
 
     private static void validarNombre(String nombre) {
-        if (nombre == null || nombre.isBlank()) {
-            throw new IllegalArgumentException("El nombre no puede estar vacio");
+        if (nombre == null || nombre.isBlank() || !nombre.matches(PATRON_NOMBRE)) {
+            throw new IllegalArgumentException("El nombre solo puede contener letras ASCII, numeros y espacios");
         }
     }
 

@@ -21,7 +21,7 @@ import java.util.concurrent.LinkedBlockingQueue;
  *   <li>Un hilo daemon ({@code entrada-consola}) lee el flujo original y publica <b>una linea completa</b>
  *       por elemento en una {@link BlockingQueue}.</li>
  *   <li>Este objeto es un {@link InputStream} que sirve esas lineas al {@code Scanner}: las lecturas
- *       normales (menus, login...) simplemente esperan la siguiente linea.</li>
+ *       normales (menus del juego) simplemente esperan la siguiente linea.</li>
  *   <li>Para la lectura con limite, el temporizador de turno llama a {@link #expirar()}, que publica un
  *       elemento especial en la misma cola. {@link #esperarLinea()} lo recibe y devuelve {@code false}
  *       sin tocar el {@code Scanner}: el hilo principal sigue de inmediato, sin exigir un Enter tardio.</li>

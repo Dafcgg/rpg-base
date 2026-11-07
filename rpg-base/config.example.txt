@@ -1,9 +1,0 @@
-# Plantilla de configuracion de base de datos - Unidad 5.2
-# Copiar este archivo como config.txt y rellenar con las credenciales reales
-# IMPORTANTE: NO subir config.txt al repositorio (esta en el .gitignore)
-# url          -> base de la Arena Segura (jugadores, monstruos, victorias)
-# url_grupal   -> base del Registro de Heroes (tabla heroes)
-url=jdbc:mysql://localhost:3306/rpg_arena_db
-url_grupal=jdbc:mysql://localhost:3306/rpg_grupal_db
-usuario=root
-clave=tu_clave_aqui

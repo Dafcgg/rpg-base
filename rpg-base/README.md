@@ -4,14 +4,12 @@ Simulador de combate por consola en **Java 21** que reune cuatro entregas del pr
 
 - **Taller de Concurrencia (Unidades 4.1 y 4.2):** temporizador de turno, efectos DoT/HoT en hilos, torneo con semifinales en paralelo y auto-guardado en un hilo daemon.
 - **Taller de Persistencia en Archivos:** historial de combates en texto, guardado y carga de partida con serializacion segura.
-- **Unidad 5.2 (JDBC + MVC):** "Arena Segura" (jugadores, monstruos, victorias) y "Registro de Heroes" (CRUD de heroes en MySQL, con opcion para combatir con un heroe cargado desde la base de datos).
 - **Base del juego:** el simulador de los talleres 1 a 8 (POO, colecciones, excepciones, genericos).
 
 ## Requisitos
 
 - JDK 21
 - Maven 3.9+ (opcional si compilas con `javac`)
-- MySQL 8.x (solo para las opciones 8 a 11 del menu; el combate, el torneo y la persistencia en archivos funcionan sin base de datos)
 
 ## Como compilar y ejecutar
 
@@ -40,32 +38,7 @@ javac -encoding UTF-8 -Xlint:all -cp out -d out-test src/test/java/com/rpg/test/
 java -cp out:out-test com.rpg.test.DryRunSuite
 ```
 
-(En Windows usa `;` en lugar de `:` en el classpath.) Debe terminar con `0 fallidas`. No necesita MySQL.
-
-## Configuracion de la base de datos
-
-1. Ejecuta los dos scripts en MySQL:
-
-   ```
-   mysql -u root -p < schema.sql
-   mysql -u root -p < schema_grupal.sql
-   ```
-
-2. Copia `config.example.txt` como `config.txt` y completa `usuario` y `clave` (y las URL si tu MySQL no esta en `localhost:3306`):
-
-   ```
-   url=jdbc:mysql://localhost:3306/rpg_arena_db
-   url_grupal=jdbc:mysql://localhost:3306/rpg_grupal_db
-   usuario=root
-   clave=tu_clave_aqui
-   ```
-
-   `config.txt` esta en el `.gitignore`: **nunca se sube al repositorio**. Si el archivo no existe, el juego lo avisa con un mensaje y las opciones de base de datos quedan deshabilitadas (no se lanza ninguna traza).
-
-> **ADVERTENCIA: `schema.sql` y `schema_grupal.sql` REINICIAN la base de datos.**
-> Ambos scripts empiezan con `DROP TABLE IF EXISTS ...`: si ya existian las tablas (`jugadores`, `monstruos`, `victorias`, `heroes`),
-> se **borran con todos sus datos** y se vuelven a crear con los datos de ejemplo. Ejecutalos solo para una instalacion nueva
-> o cuando quieras empezar de cero.
+(En Windows usa `;` en lugar de `:` en el classpath.) Debe terminar con `0 fallidas`.
 
 ## Menu principal
 
@@ -77,9 +50,6 @@ java -cp out:out-test com.rpg.test.DryRunSuite
 | 4 / 5 | Guardar / cargar partida (`partidas/perfil_jugador.dat`) |
 | 6 | Ver historial de combates (`historial_combates.txt`) |
 | 7 | Borrar partida guardada (con confirmacion) |
-| 8 / 9 | Bestiario en BD, ranking y victorias (requiere sesion y MySQL) |
-| 10 | Registro de heroes: insertar, listar, buscar por tipo, actualizar nivel, eliminar |
-| 11 | Cargar heroe desde BD y combatir (instancia un `Guerrero` o `Mago` con la vida y el nivel de la fila) |
 
 ### Temporizador de turno
 
@@ -92,13 +62,7 @@ Si el tiempo se agota, **el juego continua automaticamente**: el turno se pierde
 ```
 com.rpg
   Main                      una sola linea: new MenuPrincipalUI().iniciar()
-  view/                     vistas por consola (Scanner + System.out; sin java.sql ni DAO)
-    MenuPrincipalUI, LoginUI, MonstruoUI, RankingUI, HeroeUI
-  controller/               reglas de negocio y validaciones
-    JugadorController, MonstruoController, VictoriaController, HeroeController
-  dao/                      unico lugar con java.sql; 100 % PreparedStatement + try-with-resources
-    ConexionDB, JugadorDAO, MonstruoDAO, VictoriaDAO, HeroeDAO
-  model/                    POJOs: Jugador, Monstruo, Victoria, RankingDTO, Heroe
+  view/                     MenuPrincipalUI
   core/                     flujo del juego
     MotorJuego, Arena, TorneoManager, Bestiario, RegistroCombate, FormatoCombate, Accion,
     Consola, EntradaConsola (lectura con limite de tiempo), TurnoCallback
@@ -113,9 +77,8 @@ com.rpg
 
 ## Documentacion
 
-`INFORME.md` contiene los diagramas (autenticacion e "insertar heroe": View -> Controller -> DAO -> BD), la comparacion
-`Statement` vs `PreparedStatement`, la demostracion didactica de SQL Injection, las correcciones de concurrencia y persistencia,
-la teoria de archivos (rutas, `createNewFile`, `serialVersionUID`, `NotSerializableException`, `FileWriter` vs `Files.writeString`)
+`INFORME.md` documenta las correcciones de concurrencia y persistencia, la teoria de archivos
+(rutas, `createNewFile`, `serialVersionUID`, `NotSerializableException`, `FileWriter` vs `Files.writeString`)
 y la tabla de hallazgos de auditoria y su solucion.
 
 ## Lo que ya debes tener (checklist base)
@@ -127,7 +90,7 @@ y la tabla de hallazgos de auditoria y su solucion.
 | T2 | Bucles `while` / `do-while` / `for`, `break` / `continue` | `MotorJuego.combatir`, `turnoJugador` (do-while), `Consola.leerEntero` (reintento con `continue`), `Personaje.procesarEfectos` |
 | T3 | `String`: `trim`, `equalsIgnoreCase`, `format`, `StringBuilder` | `Consola.leerNombre`, `FormatoCombate.barraVida`, `RegistroCombate`, `MotorJuego.guardarProgreso` |
 | T4 | Clases, objetos, constructores sobrecargados y `this(...)` | `Guerrero`, `Mago`, `Enemigo`, `Pocion`, `Personaje` |
-| T5 | Encapsulamiento: atributos privados, getters/setters validados | `Personaje.setVida` (nunca < 0 ni > vida maxima), `setNivel`, `setNombre`, `Arma`, `Heroe` |
+| T5 | Encapsulamiento: atributos privados, getters/setters validados | `Personaje.setVida` (nunca < 0 ni > vida maxima), `setNivel`, `setNombre`, `Arma` |
 | T6 | Clase abstracta, interfaz, polimorfismo, genericos | `Personaje`, `ICombatiente`, `realizarAtaqueEspecial` en `Guerrero` / `Mago` / `Enemigo`, `Inventario<T>` |
 | T7 | Composicion, agregacion, asociacion | `Personaje` crea su `Inventario` (composicion); `Gremio` y `Escuadron` (agregacion); `Personaje.equiparArma` y `unirseAGremio` (asociacion) |
 | T8 | Enums, `Set`, `Map`, excepciones propias | `enums/`, `Personaje.habilidades` (`HashSet`), `PerfilJugador.logros` (`TreeSet`), `Bestiario` (`Map`), `exceptions/` |
@@ -235,10 +198,10 @@ y la tabla de hallazgos de auditoria y su solucion.
 - [x] El ciclo `Personaje` - `Gremio` se serializa correctamente.
 - [x] Opcion "Cargar partida" en el menu.
 
-### Seccion 6: `try-with-resources` y excepciones
+### Seccion 6: recursos y excepciones
 
-- [x] Todos los flujos y conexiones JDBC se abren con `try-with-resources`.
-- [x] `IOException`, `FileNotFoundException` (la mas especifica primero), `ClassNotFoundException` y `NotSerializableException` con mensajes utiles.
+- [x] Los flujos de archivos se abren con `try-with-resources`.
+- [x] `IOException`, `ClassNotFoundException` y `NotSerializableException` con mensajes utiles.
 - [x] Ningun `catch` vacio.
 - [x] El juego no se cae si el archivo no existe, esta corrupto o no se puede escribir.
 
@@ -247,17 +210,6 @@ y la tabla de hallazgos de auditoria y su solucion.
 - [x] `AutoGuardadoDaemon` escribe a disco cada 30 s.
 - [x] La escritura y la lectura de los `.dat` estan protegidas con `synchronized` (un mismo candado en `GestorPartidas`; el historial `.txt` tiene el suyo).
 - [x] Al cerrar el juego el hilo daemon no deja un archivo a medio escribir (la escritura ocurre dentro del cerrojo).
-
-## Checklist de la Unidad 5.2 (completado)
-
-- [x] `mysql-connector-j` 8.4.0 en `pom.xml`.
-- [x] `schema.sql` (`rpg_arena_db`) y `schema_grupal.sql` (`rpg_grupal_db`, tabla `heroes`).
-- [x] 100 % `PreparedStatement` con parametros `?` en `JugadorDAO`, `MonstruoDAO`, `VictoriaDAO` y `HeroeDAO`.
-- [x] `Heroe` (POJO), `HeroeDAO`, `HeroeController` y `HeroeUI`; `actualizarNivel` y `eliminar` devuelven filas afectadas y el controlador avisa "no existe un heroe con ese id" si es 0.
-- [x] Opcion 11: carga un heroe, instancia `Guerrero` o `Mago` con su vida maxima y su **nivel** (cada nivel sobre el 1 suma 1 punto de ataque) y lo pasa a `MotorJuego.combateRapidoCon()`.
-- [x] `Main` de una sola linea; ninguna clase fuera de `dao` importa `java.sql`.
-- [x] `LoginInseguroDemo` eliminado del codigo; la demo de SQL Injection esta solo en `INFORME.md`.
-- [x] Diagrama de secuencia de "insertar heroe" en `INFORME.md`.
 
 ## Investigacion obligatoria
 
@@ -270,4 +222,4 @@ y la tabla de hallazgos de auditoria y su solucion.
 
 - Los mensajes de consola no llevan tildes a proposito, para que se vean bien en cualquier terminal.
 - No hay semilla fija: el azar (criticos, habilidades de los enemigos) cambia en cada ejecucion.
-- `config.txt`, `partidas/` y `historial_combates.txt` se generan localmente y estan en el `.gitignore`.
+- `partidas/` y `historial_combates.txt` se generan localmente y estan en el `.gitignore`.

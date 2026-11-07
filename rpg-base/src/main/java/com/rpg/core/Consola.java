@@ -7,7 +7,7 @@ import java.util.Scanner;
 public class Consola {
 
     private static final int LARGO_MAXIMO_NOMBRE = 15;
-    private static final String PATRON_NOMBRE = "[\\p{L}0-9 ]+";
+    private static final String PATRON_NOMBRE = "[A-Za-z0-9 ]+";
 
     private final Scanner scanner;
 
@@ -81,7 +81,7 @@ public class Consola {
                     }
                     System.out.printf("Numero fuera de rango (%d a %d).%n", minimo, maximo);
                 } catch (NumberFormatException e) {
-                    System.out.println("\"" + texto + "\" no es un numero.");
+                    System.out.println("Entrada no valida. Ingresa un numero entero.");
                 }
             }
         } finally {
@@ -110,7 +110,7 @@ public class Consola {
                 }
                 System.out.printf("Numero fuera de rango (%d a %d).%n", minimo, maximo);
             } catch (NumberFormatException e) {
-                System.out.println("\"" + texto + "\" no es un numero.");
+                System.out.println("Entrada no valida. Ingresa un numero entero.");
             }
         }
     }
@@ -123,7 +123,7 @@ public class Consola {
             } else if (nombre.length() > LARGO_MAXIMO_NOMBRE) {
                 System.out.println("Maximo " + LARGO_MAXIMO_NOMBRE + " caracteres.");
             } else if (!nombre.matches(PATRON_NOMBRE)) {
-                System.out.println("Usa solo letras, numeros y espacios.");
+                System.out.println("Usa solo letras ASCII, numeros y espacios.");
             } else {
                 return nombre;
             }

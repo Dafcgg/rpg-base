@@ -4,10 +4,6 @@ import com.rpg.concurrency.AutoGuardadoDaemon;
 import com.rpg.concurrency.EfectoContinuoTask;
 import com.rpg.concurrency.GestorTurno;
 import com.rpg.concurrency.TemporizadorTurnoTask;
-import com.rpg.controller.HeroeController;
-import com.rpg.controller.JugadorController;
-import com.rpg.controller.MonstruoController;
-import com.rpg.controller.VictoriaController;
 import com.rpg.core.Accion;
 import com.rpg.core.Arena;
 import com.rpg.core.Bestiario;
@@ -17,11 +13,6 @@ import com.rpg.core.FormatoCombate;
 import com.rpg.core.RegistroCombate;
 import com.rpg.core.TorneoManager;
 import com.rpg.core.TurnoCallback;
-import com.rpg.dao.ConexionDB;
-import com.rpg.dao.HeroeDAO;
-import com.rpg.dao.JugadorDAO;
-import com.rpg.dao.MonstruoDAO;
-import com.rpg.dao.VictoriaDAO;
 import com.rpg.entities.Arma;
 import com.rpg.entities.Enemigo;
 import com.rpg.entities.Escuadron;
@@ -38,11 +29,6 @@ import com.rpg.items.Inventario;
 import com.rpg.items.Pocion;
 import com.rpg.demo.DemoArchivos;
 import com.rpg.demo.DemoHilosDaemon;
-import com.rpg.model.Heroe;
-import com.rpg.model.Jugador;
-import com.rpg.model.Monstruo;
-import com.rpg.model.RankingDTO;
-import com.rpg.model.Victoria;
 import com.rpg.persistencia.GestorPartidas;
 
 import java.io.*;
@@ -77,7 +63,6 @@ public class DryRunSuite {
         testCompilacionYFirmas();
         testConcurrenciaHilos();
         testPersistenciaArchivos();
-        testJDBCyArquitecturaMVC();
         testCorreccionesAuditoria();
         testCorreccionesFinales();
         testFormatoYEstilo();
@@ -97,26 +82,18 @@ public class DryRunSuite {
     private static void testCompilacionYFirmas() {
         System.out.println("--- 1. COMPILACION Y DEPURACION SINTACTICA ---");
 
-        // POJOs y DTOs
-        Jugador j = new Jugador("testUser", "hash123", "admin");
-        afirmo(j.getUsuario().equals("testUser") && j.esAdmin(), "Jugador POJO getters y metodo esAdmin");
-
-        Monstruo m = new Monstruo(1, "Dragon", 200, 25);
-        afirmo(m.getId() == 1 && m.getNombre().equals("Dragon") && m.getVida() == 200 && m.getAtaque() == 25,
-                "Monstruo POJO getters y constructor completo");
-
-        Victoria v = new Victoria(1, 2);
-        afirmo(v.getJugadorId() == 1 && v.getMonstruoId() == 2 && v.getFecha() != null,
-                "Victoria POJO constructor por defecto y fecha automatica");
-
-        RankingDTO r = new RankingDTO("campeon", 15);
-        afirmo(r.getUsuario().equals("campeon") && r.getTotalVictorias() == 15,
-                "RankingDTO encapsulamiento y estructura");
-
         // Interfaces y herencia
         Guerrero g = new Guerrero("Conan");
         afirmo(g instanceof Personaje && g.getNombre().equals("Conan") && g.getDefensa() > 0,
                 "Guerrero hereda de Personaje y calcula defensa con escudo");
+
+        boolean rechazaNombreUnicode = false;
+        try {
+            new Guerrero("Jos" + (char) 233);
+        } catch (IllegalArgumentException e) {
+            rechazaNombreUnicode = true;
+        }
+        afirmo(rechazaNombreUnicode, "Personaje solo acepta nombres ASCII para mantener la consola compatible");
 
         Mago mago = new Mago("Gandalf");
         afirmo(mago instanceof Personaje && mago.getMana() == 60,
@@ -278,185 +255,18 @@ public class DryRunSuite {
     }
 
     // ==================================================================
-    // 4. PRUEBAS DE JDBC Y ARQUITECTURA MVC
-    // ==================================================================
-    private static void testJDBCyArquitecturaMVC() throws Exception {
-        System.out.println("\n--- 4. JDBC Y ARQUITECTURA MVC ---");
-
-        // 4.1 ConexionDB lee config.txt de forma segura con File.exists() sin lanzar excepcion no capturada
-        File configReal = new File("config.txt");
-        boolean existiaAntes = configReal.exists();
-
-        // Probar cuando no existe
-        if (existiaAntes) configReal.renameTo(new File("config.txt.bak"));
-        java.sql.Connection conn = ConexionDB.obtenerConexion();
-        afirmo(conn == null, "ConexionDB maneja de forma segura ausencia de config.txt retornando null");
-        if (existiaAntes) new File("config.txt.bak").renameTo(configReal);
-
-        // 4.2 Hashing SHA-256 en Jugador
-        String passPlano = "claveSecreta123";
-        String hash1 = Jugador.hashSHA256(passPlano);
-        String hash2 = Jugador.hashSHA256(passPlano);
-        afirmo(hash1 != null && hash1.length() == 64 && hash1.equals(hash2),
-                "Hash SHA-256 determinista de 64 caracteres hexadecimales");
-
-        // 4.3 Bloqueo de acceso tras 3 intentos fallidos de login en JugadorController
-        JugadorController jc = new JugadorController();
-        afirmo(!jc.estaBloqueado(), "Estado inicial no bloqueado");
-        jc.login("usuarioInexistente", "claveFalsa1");
-        jc.login("usuarioInexistente", "claveFalsa2");
-        jc.login("usuarioInexistente", "claveFalsa3");
-        afirmo(jc.estaBloqueado(), "JugadorController bloquea sesion tras 3 intentos fallidos");
-        Jugador jBloqueado = jc.login("admin", "admin123");
-        afirmo(jBloqueado == null, "Intento de login con credenciales validas rechazado mientras esta bloqueado");
-
-        // 4.4 Reglas de negocio de roles en JugadorController
-        Jugador jugadorComun = new Jugador("pedro", "hash", "jugador");
-        Jugador admin = new Jugador("admin", "hash", "admin");
-
-        JugadorController jcComun = new JugadorController(jugadorComun);
-        afirmo(!jcComun.cambiarRol(5, "admin"), "Usuario comun no puede cambiar rol a admin");
-        afirmo(!jcComun.eliminar(5), "Usuario comun no puede eliminar jugadores");
-
-        JugadorController jcAdmin = new JugadorController(admin);
-        afirmo(jcAdmin.esAdmin(), "Admin detectado con privilegios administrativos");
-
-        // 4.5 Reglas de negocio de roles en MonstruoController
-        MonstruoController mcComun = new MonstruoController(jugadorComun);
-        afirmo(!mcComun.crear("Hydra", 300, 30), "Usuario comun no puede crear monstruos");
-        afirmo(!mcComun.actualizar(1, "Hydra", 300, 30), "Usuario comun no puede actualizar monstruos");
-        afirmo(!mcComun.eliminar(1), "Usuario comun no puede eliminar monstruos");
-
-        MonstruoController mcAdmin = new MonstruoController(admin);
-        // Validacion de parametros en admin
-        afirmo(!mcAdmin.crear("", 100, 10), "Validacion: nombre de monstruo no puede estar vacio");
-        afirmo(!mcAdmin.crear("Test", -10, 10), "Validacion: vida debe ser > 0");
-
-        // 4.6 VictoriaController: sesion y flujo de registro
-        VictoriaController vcSinSesion = new VictoriaController(null);
-        afirmo(!vcSinSesion.registrarVictoria(1), "VictoriaController rechaza registro sin sesion activa");
-        afirmo(!vcSinSesion.intentarRegistrarPorNombre("Goblin"), "VictoriaController no registra sin sesion");
-
-        // 4.7 Arquitectura MVC Estricta: Ningun Controller o View debe exponer ResultSet o Connection
-        List<Class<?>> clasesControladores = List.of(
-                JugadorController.class,
-                MonstruoController.class,
-                VictoriaController.class
-        );
-        boolean fugaJDBC = false;
-        for (Class<?> clazz : clasesControladores) {
-            for (Method metodo : clazz.getDeclaredMethods()) {
-                if (metodo.getReturnType().getName().startsWith("java.sql.")) {
-                    fugaJDBC = true;
-                    System.err.println("Fuga JDBC en metodo: " + clazz.getSimpleName() + "." + metodo.getName());
-                }
-                for (Class<?> param : metodo.getParameterTypes()) {
-                    if (param.getName().startsWith("java.sql.")) {
-                        fugaJDBC = true;
-                        System.err.println("Parametro JDBC en: " + clazz.getSimpleName() + "." + metodo.getName());
-                    }
-                }
-            }
-        }
-        afirmo(!fugaJDBC, "Arquitectura MVC estricta: 0 clases java.sql expuestas en capas Controller");
-    }
-
-    // ==================================================================
     // 5. PRUEBAS DE FORMATO Y ESTILO
     // ==================================================================
     // ==================================================================
-    // 6. CORRECCIONES DE AUDITORIA (heroes, concurrencia, persistencia, MVC)
+    // 6. CORRECCIONES DE AUDITORIA (concurrencia y persistencia)
     // ==================================================================
     private static void testCorreccionesAuditoria() throws Exception {
         System.out.println("\n--- 6. CORRECCIONES DE AUDITORIA ---");
 
-        // 6.1 POJO Heroe validado
-        boolean valida = false;
-        try {
-            new Heroe(" ", "guerrero", 10, 1);
-        } catch (IllegalArgumentException e) {
-            valida = true;
-        }
-        try {
-            new Heroe("X", "arquero", 10, 1);
-            valida = false;
-        } catch (IllegalArgumentException e) {
-            // esperado
-        }
-        Heroe h = new Heroe(7, " Zed ", "MAGO", 90, 2);
-        afirmo(valida && h.getNombre().equals("Zed") && h.getTipo().equals("mago") && h.getId() == 7,
-                "Heroe POJO valida nombre/tipo/vida/nivel y normaliza datos");
-
-        // 6.2 HeroeController valida antes de llegar al DAO (sin BD)
-        final int[] llamadasDao = {0};
-        HeroeDAO daoFalso = new HeroeDAO() {
-            @Override
-            public boolean insertar(Heroe heroe) {
-                llamadasDao[0]++;
-                return true;
-            }
-
-            @Override
-            public int actualizarNivel(int id, int nivel) {
-                llamadasDao[0]++;
-                return id == 1 ? 1 : 0;
-            }
-
-            @Override
-            public int eliminar(int id) {
-                llamadasDao[0]++;
-                return id == 1 ? 1 : 0;
-            }
-
-            @Override
-            public Heroe obtenerPorId(int id) {
-                if (id == 1) return new Heroe(1, "Maximo", "guerrero", 150, 4);
-                if (id == 2) return new Heroe(2, "Circe", "mago", 80, 2);
-                return null;
-            }
-        };
-        HeroeController hc = new HeroeController(daoFalso);
-        boolean rechaza = !hc.insertar("", "guerrero", 10, 1)
-                && !hc.insertar("A", "arquero", 10, 1)
-                && !hc.insertar("A", "mago", 0, 1)
-                && !hc.insertar("A", "mago", 10, 0);
-        afirmo(rechaza && llamadasDao[0] == 0, "HeroeController rechaza nombre vacio, tipo invalido, vida<=0 y nivel<1 sin tocar el DAO");
-        afirmo(hc.insertar("Nuevo", "mago", 50, 1) && llamadasDao[0] == 1, "HeroeController delega la insercion valida al DAO");
-        afirmo(hc.actualizarNivel(1, 5) == 1 && hc.actualizarNivel(99, 5) == 0 && hc.eliminar(99) == 0 && hc.eliminar(1) == 1,
-                "actualizarNivel/eliminar devuelven filas afectadas (0 -> 'no existe un heroe con ese id')");
-
-        // 6.3 Cargar heroe desde BD -> Guerrero/Mago en memoria
-        Personaje pg = hc.crearPersonaje(1);
-        Personaje pm = hc.crearPersonaje(2);
-        afirmo(pg instanceof Guerrero && pg.getVidaMaxima() == 150 && pg.getVida() == 150
-                        && pm instanceof Mago && pm.getVidaMaxima() == 80 && hc.crearPersonaje(99) == null,
-                "crearPersonaje instancia Guerrero o Mago con la vida maxima de la fila");
-        afirmo(pg.getNivel() == 4 && pm.getNivel() == 2,
-                "crearPersonaje aplica el nivel de la fila al personaje (getNivel)");
-
-        // 6.4 ConexionDB sin config.txt: no cae ni conecta
-        boolean sinConfig = !new File("config.txt").exists();
-        afirmo(!sinConfig || (ConexionDB.obtenerConexionGrupal() == null && ConexionDB.obtenerConexion() == null),
-                "ConexionDB sin config.txt informa el error y devuelve null (sin traza)");
-
-        // 6.5 Main minimo y vistas sin JDBC
+        // 6.1 Main minimo
         afirmo(Class.forName("com.rpg.Main").getDeclaredMethods().length == 1, "Main solo declara main(String[])");
-        File viewDir = new File("src/main/java/com/rpg/view");
-        boolean viewsLimpias = true;
-        File[] vistas = viewDir.listFiles((d, n) -> n.endsWith(".java"));
-        if (vistas != null) {
-            for (File f : vistas) {
-                for (String linea : Files.readAllLines(f.toPath())) {
-                    if (linea.startsWith("import java.sql") || linea.startsWith("import com.rpg.dao")) {
-                        viewsLimpias = false;
-                    }
-                }
-            }
-        }
-        afirmo(viewsLimpias && !new File("src/main/java/com/rpg/demo/LoginInseguroDemo.java").exists(),
-                "Views sin java.sql/DAO y sin SQL concatenado activo (LoginInseguroDemo retirado)");
 
-        // 6.6 TorneoManager: semifinales en paralelo (sin synchronized) y el torneo termina
+        // 6.2 TorneoManager: semifinales en paralelo (sin synchronized) y el torneo termina
         Method semi = TorneoManager.class.getMethod("simularSemifinal", Personaje.class, Personaje.class);
         afirmo(!Modifier.isSynchronized(semi.getModifiers()), "simularSemifinal ya no esta synchronized (semifinales en paralelo)");
         RegistroCombate regT = new RegistroCombate();
