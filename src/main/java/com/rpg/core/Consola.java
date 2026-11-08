@@ -25,6 +25,13 @@ public class Consola {
     }
 
     /**
+     * Prepara el canal para una espera con limite descartando marcas previas.
+     */
+    public void prepararEsperaConLimite() {
+        entrada.armar();
+    }
+
+    /**
      * Llamado por el temporizador de turno ({@code TurnoCallback}) cuando se agota el tiempo.
      * Despierta al hilo principal que espera en {@link #leerEnteroConLimite}.
      */

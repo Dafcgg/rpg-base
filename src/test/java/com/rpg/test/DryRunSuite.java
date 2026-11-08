@@ -6,6 +6,7 @@ import com.rpg.concurrency.GestorTurno;
 import com.rpg.concurrency.TemporizadorTurnoTask;
 import com.rpg.controller.HeroeController;
 import com.rpg.core.Accion;
+import com.rpg.core.AccionCombate;
 import com.rpg.core.Arena;
 import com.rpg.core.Bestiario;
 import com.rpg.core.Consola;
@@ -65,6 +66,7 @@ public class DryRunSuite {
 
         testCompilacionYFirmas();
         testRegistroHeroe();
+        testExpresionesLambda();
         testConcurrenciaHilos();
         testPersistenciaArchivos();
         testCorreccionesAuditoria();
@@ -132,6 +134,79 @@ public class DryRunSuite {
             rechazaTipoInvalido = true;
         }
         afirmo(rechazaTipoInvalido, "Heroe rechaza tipos fuera de guerrero o mago");
+    }
+
+    // ==================================================================
+    // 1.5. PRUEBAS DE EXPRESIONES LAMBDA (JAVA.UTIL.FUNCTION)
+    // ==================================================================
+    private static void testExpresionesLambda() {
+        System.out.println("\n--- 1.5. EXPRESIONES LAMBDA (JAVA.UTIL.FUNCTION) ---");
+
+        // 1. Consumer y BiConsumer
+        RegistroCombate reg = new RegistroCombate();
+        List<String> mensajesCapturados = new ArrayList<>();
+        reg.setConsumidorLog(mensajesCapturados::add);
+        reg.agregar("Evento de combate de prueba");
+        afirmo(mensajesCapturados.contains("Evento de combate de prueba"),
+                "Consumer<String> con referencia a metodo captura eventos de registro");
+
+        Guerrero gTest = new Guerrero("Tester");
+        int vidaInicial = gTest.getVida();
+        Arena.APLICAR_DANIO.accept(gTest, 25);
+        afirmo(gTest.getVida() == vidaInicial - 25,
+                "BiConsumer<Personaje, Integer> aplica danio a la entidad");
+        Arena.APLICAR_CURACION.accept(gTest, 15);
+        afirmo(gTest.getVida() == vidaInicial - 10,
+                "BiConsumer<Personaje, Integer> aplica curacion a la entidad");
+
+        // 2. Supplier
+        Bestiario b = new Bestiario();
+        java.util.function.Supplier<Enemigo> supplier = b.proveedorEnemigoAleatorio(new Random(42));
+        Enemigo e1 = supplier.get();
+        Enemigo e2 = supplier.get();
+        afirmo(e1 != null && e2 != null && e1 != e2 && e1.estaVivo(),
+                "Supplier<Enemigo> genera instancias de enemigos bajo demanda de forma perezosa");
+
+        // 3. Predicate y removeIf
+        Escuadron esc = new Escuadron("TestSquad");
+        Guerrero vivo = new Guerrero("Vivo");
+        Guerrero caido = new Guerrero("Caido");
+        caido.recibirDanio(caido.getVidaMaxima());
+        esc.agregar(vivo);
+        esc.agregar(caido);
+        afirmo(esc.getMiembros().size() == 2 && !caido.estaVivo(),
+                "Escuadron contiene combatiente vivo y combatiente caido");
+        boolean removido = esc.limpiarMuertos();
+        afirmo(removido && esc.getMiembros().size() == 1 && esc.getMiembros().get(0) == vivo,
+                "Predicate<Personaje> y removeIf limpian combatientes caidos del escuadron");
+
+        // 4. Function y BiFunction
+        Heroe heroeModelo = new Heroe(99, "Valquiria", "guerrero", 180, 7);
+        Personaje entidadCreada = HeroeController.TRANSFORMADOR_HEROE.apply(heroeModelo);
+        afirmo(entidadCreada instanceof Guerrero
+                        && entidadCreada.getNombre().equals("Valquiria")
+                        && entidadCreada.getVidaMaxima() == 180
+                        && entidadCreada.getNivel() == 7,
+                "Function<Heroe, Personaje> convierte correctamente modelos BD a entidades");
+
+        Guerrero atacante = new Guerrero("Atacante");
+        atacante.setNivel(5);
+        Enemigo defensor = new Enemigo("GoblinDef", 60, 8, 2);
+        defensor.setNivel(1);
+        int danioBase = Arena.CALCULADOR_DANIO_BASE.apply(atacante, defensor);
+        afirmo(danioBase > atacante.calcularDanio(),
+                "BiFunction<Personaje, Personaje, Integer> calcula danio dinamico con ventaja de nivel y tipo");
+
+        // 5. Interfaz funcional propia (@FunctionalInterface) AccionCombate
+        int vidaDefensorAntes = defensor.getVida();
+        String reporteFisico = Arena.ATAQUE_FISICO.ejecutar(atacante, defensor);
+        afirmo(defensor.getVida() < vidaDefensorAntes && reporteFisico.contains("[Ataque Fisico]"),
+                "AccionCombate: expresion lambda para ataque fisico contundente");
+
+        vidaDefensorAntes = defensor.getVida();
+        String reporteMagico = Arena.ATAQUE_MAGICO.ejecutar(atacante, defensor);
+        afirmo(defensor.getVida() < vidaDefensorAntes && reporteMagico.contains("[Ataque Magico]"),
+                "AccionCombate: expresion lambda para ataque magico directo");
     }
 
     // ==================================================================

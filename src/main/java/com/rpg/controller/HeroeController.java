@@ -11,11 +11,28 @@ import com.rpg.model.Heroe;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.function.Function;
 
 /** Validates hero operations and coordinates the view, DAO, and game domain. */
 public class HeroeController {
 
     private static final String MENSAJE_NO_EXISTE = "no existe un heroe con ese id";
+
+    /**
+     * Funcion lambda para transformar un modelo Heroe de la base de datos a su respectiva entidad Personaje.
+     */
+    public static final Function<Heroe, Personaje> TRANSFORMADOR_HEROE = heroe -> {
+        Objects.requireNonNull(heroe, "heroe");
+        Personaje personaje = switch (heroe.getTipo()) {
+            case "guerrero" -> new Guerrero(heroe.getNombre());
+            case "mago" -> new Mago(heroe.getNombre());
+            default -> throw new IllegalArgumentException("Tipo de heroe desconocido.");
+        };
+        personaje.setVidaMaxima(heroe.getVidaMaxima());
+        personaje.restaurarVida();
+        personaje.setNivel(heroe.getNivel());
+        return personaje;
+    };
 
     private final HeroeDAO heroeDAO;
     private final Consola consola;
@@ -156,18 +173,22 @@ public class HeroeController {
     /**
      * Converts a stored row to its combat class and copies health and level.
      * Personaje.calcularDanio includes level, so the stored level affects combat.
+     * Implementado mediante la funcion lambda {@link #TRANSFORMADOR_HEROE}.
      */
     public Personaje convertirAEntity(Heroe heroe) {
-        Objects.requireNonNull(heroe, "heroe");
-        Personaje personaje = switch (heroe.getTipo()) {
-            case "guerrero" -> new Guerrero(heroe.getNombre());
-            case "mago" -> new Mago(heroe.getNombre());
-            default -> throw new IllegalArgumentException("Tipo de heroe desconocido.");
-        };
-        personaje.setVidaMaxima(heroe.getVidaMaxima());
-        personaje.restaurarVida();
-        personaje.setNivel(heroe.getNivel());
-        return personaje;
+        return convertirConFuncion(heroe, TRANSFORMADOR_HEROE);
+    }
+
+    /**
+     * Convierte un modelo {@link Heroe} aplicando una funcion de mapeo {@link Function}.
+     *
+     * @param heroe Modelo a transformar
+     * @param mapper Funcion de transformacion
+     * @return Entidad Personaje resultante
+     */
+    public Personaje convertirConFuncion(Heroe heroe, Function<Heroe, Personaje> mapper) {
+        Objects.requireNonNull(mapper, "mapper");
+        return mapper.apply(heroe);
     }
 
     private static boolean tipoValido(String tipo) {

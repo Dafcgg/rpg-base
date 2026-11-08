@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
+import java.util.function.Supplier;
 
 /** Catalogo de monstruos (Map nombre -> plantilla) y contador de derrotas por monstruo. */
 public class Bestiario {
@@ -40,6 +42,29 @@ public class Bestiario {
             }
         }
         return null;
+    }
+
+    /**
+     * Retorna un Supplier funcional para generacion perezosa (lazy) de un enemigo aleatorio.
+     * La eleccion y clonacion del enemigo se pospone hasta invocar get().
+     */
+    public Supplier<Enemigo> proveedorEnemigoAleatorio(Random azar) {
+        Random rnd = azar != null ? azar : new Random();
+        return () -> {
+            List<String> listaNombres = nombres();
+            if (listaNombres.isEmpty()) {
+                return null;
+            }
+            String nombreElegido = listaNombres.get(rnd.nextInt(listaNombres.size()));
+            return crearEnemigo(nombreElegido);
+        };
+    }
+
+    /**
+     * Retorna un enemigo generado de forma perezosa mediante un Supplier.
+     */
+    public Enemigo obtenerEnemigoAleatorio() {
+        return proveedorEnemigoAleatorio(new Random()).get();
     }
 
     public void registrarEnemigoDerrotado(String nombre) {

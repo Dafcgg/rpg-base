@@ -19,6 +19,7 @@ import com.rpg.persistencia.GestorPartidas;
 import java.util.List;
 import java.util.OptionalInt;
 import java.util.Random;
+import java.util.function.Supplier;
 
 /**
  * Coordina el flujo del juego: crear heroe, combatir, torneo, bestiario,
@@ -35,6 +36,7 @@ public class MotorJuego {
     private final RegistroCombate registro = new RegistroCombate();
     private final Arena arena = new Arena(registro, new Random());
     private final Bestiario bestiario = new Bestiario();
+    private final Supplier<Enemigo> proveedorEnemigoAleatorio;
     private PerfilJugador perfil = new PerfilJugador();
     private final Gremio gremio = new Gremio(NOMBRE_GREMIO);
     private final TorneoManager torneo = new TorneoManager(arena, registro);
@@ -48,6 +50,7 @@ public class MotorJuego {
 
     public MotorJuego(Consola consola) {
         this.consola = consola;
+        this.proveedorEnemigoAleatorio = bestiario.proveedorEnemigoAleatorio(new Random());
         this.gestorPartidas.setPerfilActual(this.perfil);
 
         // Inicializacion del AutoGuardadoDaemon como hilo daemon de fondo
@@ -375,6 +378,22 @@ public class MotorJuego {
 
     public String getUltimoGuardado() {
         return ultimoGuardado;
+    }
+
+    public Bestiario getBestiario() {
+        return bestiario;
+    }
+
+    public Supplier<Enemigo> getProveedorEnemigoAleatorio() {
+        return proveedorEnemigoAleatorio;
+    }
+
+    public Arena getArena() {
+        return arena;
+    }
+
+    public RegistroCombate getRegistro() {
+        return registro;
     }
 
     public PerfilJugador getPerfil() {

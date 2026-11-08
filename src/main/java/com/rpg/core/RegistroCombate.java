@@ -7,6 +7,8 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * Imprime cada evento del combate y lo guarda para incluirlo en el guardado de la partida
@@ -40,10 +42,21 @@ public class RegistroCombate {
     private static final String ARCHIVO_HISTORIAL_DEFECTO = "historial_combates.txt";
     /** Cerrojo del archivo de historial: escritura y lectura no se solapan entre hilos. */
     private static final Object LOCK_ARCHIVO = new Object();
+
+    /**
+     * Consumer funcional para la salida de eventos en consola empleando referencia a metodo.
+     */
+    private static final Consumer<String> LOG_CONSOLA = System.out::println;
+
     private final StringBuilder texto = new StringBuilder();
+    private Consumer<String> consumidorLog = LOG_CONSOLA;
+
+    public synchronized void setConsumidorLog(Consumer<String> consumidorLog) {
+        this.consumidorLog = Objects.requireNonNull(consumidorLog, "consumidorLog");
+    }
 
     public synchronized void agregar(String linea) {
-        System.out.println(linea);
+        consumidorLog.accept(linea);
         texto.append(linea).append(System.lineSeparator());
     }
 

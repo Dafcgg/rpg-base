@@ -5,6 +5,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.function.Predicate;
 
 /**
  * Agregacion: disolver el escuadron no destruye a los personajes.
@@ -33,6 +34,29 @@ public class Escuadron implements Serializable {
 
     public boolean remover(Personaje personaje) {
         return miembros.remove(personaje);
+    }
+
+    /**
+     * Remueve del escuadron a todos los combatientes que cumplan con el predicado funcional.
+     * Utiliza removeIf de Collection sin recurrir a Streams.
+     *
+     * @param criterio Filtro de seleccion (ej. p -> !p.estaVivo() o Personaje::estaVivo negado)
+     * @return true si al menos un personaje fue removido
+     */
+    public boolean removerSi(Predicate<Personaje> criterio) {
+        if (criterio == null) {
+            return false;
+        }
+        return miembros.removeIf(criterio);
+    }
+
+    /**
+     * Limpia los combatientes caidos del escuadron aplicando Predicate::not con estaVivo.
+     *
+     * @return true si se removio al menos un miembro caido
+     */
+    public boolean limpiarMuertos() {
+        return removerSi(Predicate.not(Personaje::estaVivo));
     }
 
     public int contarVivos() {
