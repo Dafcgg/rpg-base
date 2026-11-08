@@ -6,6 +6,8 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.function.Predicate;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Agregacion: disolver el escuadron no destruye a los personajes.
@@ -79,5 +81,45 @@ public class Escuadron implements Serializable {
 
     public List<Personaje> getMiembros() {
         return Collections.unmodifiableList(miembros);
+    }
+
+    /**
+     * Retorna un flujo de personajes a partir de la coleccion de miembros (lista.stream()).
+     */
+    public Stream<Personaje> stream() {
+        return miembros.stream();
+    }
+
+    /**
+     * Evalua si queda al menos un combatiente con vida mediante Stream.anyMatch().
+     */
+    public boolean tieneMiembrosVivos() {
+        return stream().anyMatch(Personaje::estaVivo);
+    }
+
+    /**
+     * Obtiene los nombres de los miembros vivos usando lista.stream(), filter(),
+     * peek() para logging silencioso de depuracion, map() y collect(Collectors.toList()).
+     */
+    public List<String> obtenerNombresVivos(boolean debug) {
+        Stream<Personaje> flujo = stream().filter(Personaje::estaVivo);
+        if (debug) {
+            flujo = flujo.peek(p -> System.out.println("[Debug-Escuadron] Procesando: " + p.getNombre()));
+        }
+        return flujo.map(Personaje::getNombre)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Aplana una lista de escuadrones mediante flatMap() a un solo flujo continuo de combatientes vivos.
+     */
+    public static List<Personaje> aplanarCombatientesVivos(List<Escuadron> escuadrones) {
+        if (escuadrones == null || escuadrones.isEmpty()) {
+            return List.of();
+        }
+        return escuadrones.stream()
+                .flatMap(Escuadron::stream)
+                .filter(Personaje::estaVivo)
+                .collect(Collectors.toList());
     }
 }

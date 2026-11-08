@@ -12,6 +12,7 @@ import com.rpg.core.Bestiario;
 import com.rpg.core.Consola;
 import com.rpg.core.EntradaConsola;
 import com.rpg.core.FormatoCombate;
+import com.rpg.core.MotorJuego;
 import com.rpg.core.RegistroCombate;
 import com.rpg.core.TorneoManager;
 import com.rpg.core.TurnoCallback;
@@ -67,6 +68,7 @@ public class DryRunSuite {
         testCompilacionYFirmas();
         testRegistroHeroe();
         testExpresionesLambda();
+        testStreamAPI();
         testConcurrenciaHilos();
         testPersistenciaArchivos();
         testCorreccionesAuditoria();
@@ -207,6 +209,61 @@ public class DryRunSuite {
         String reporteMagico = Arena.ATAQUE_MAGICO.ejecutar(atacante, defensor);
         afirmo(defensor.getVida() < vidaDefensorAntes && reporteMagico.contains("[Ataque Magico]"),
                 "AccionCombate: expresion lambda para ataque magico directo");
+    }
+
+    // ==================================================================
+    // 1.6. PRUEBAS DE STREAM API (CREACION Y OPERADORES)
+    // ==================================================================
+    private static void testStreamAPI() {
+        System.out.println("\n--- 1.6. STREAM API (CREACION Y OPERADORES) ---");
+
+        // 1. Creacion: Stream.of()
+        afirmo(HeroeController.TIPOS_VALIDOS.size() == 2
+                        && HeroeController.TIPOS_VALIDOS.contains("guerrero")
+                        && HeroeController.TIPOS_VALIDOS.contains("mago"),
+                "Stream.of() inicializa tipos validos de heroes de forma inmutable");
+
+        // 2. Creacion: Arrays.stream()
+        HeroeController controller = new HeroeController(new HeroeDAO());
+        int[] idsPrueba = new int[] {-5, 0, 999999};
+        List<Heroe> heroesEncontrados = controller.buscarPorIds(idsPrueba);
+        afirmo(heroesEncontrados != null && heroesEncontrados.isEmpty(),
+                "Arrays.stream() procesa arreglo primitivo de IDs filtrando no validos");
+
+        // 3. Creacion: Stream.builder()
+        MotorJuego motor = new MotorJuego(new Consola(new Scanner(new ByteArrayInputStream(new byte[0])),
+                new EntradaConsola(new ByteArrayInputStream(new byte[0]))));
+        Guerrero gTest = new Guerrero("HeroeStream");
+        Enemigo eTest = new Enemigo("MonstruoStream", 80, 10, 4);
+        String reporte = motor.generarReporteBatallaBuilder(gTest, eTest, false);
+        afirmo(reporte.contains("REPORTE DE BATALLA") && reporte.contains("HeroeStream"),
+                "Stream.builder() construye reporte dinamico de batalla");
+
+        // 4. Creacion: lista.stream(), Operadores: filter(), peek(), map(), collect()
+        Escuadron esc1 = new Escuadron("Alfa");
+        Guerrero g1 = new Guerrero("G1");
+        Guerrero g2 = new Guerrero("G2");
+        g2.recibirDanio(g2.getVidaMaxima()); // caido
+        esc1.agregar(g1);
+        esc1.agregar(g2);
+
+        List<String> nombresVivos = esc1.obtenerNombresVivos(false);
+        afirmo(nombresVivos.size() == 1 && nombresVivos.contains("G1"),
+                "lista.stream() con filter(), peek() y map() extrae combatientes vivos");
+
+        // 5. Operador Terminal: anyMatch()
+        afirmo(esc1.tieneMiembrosVivos(),
+                "anyMatch() comprueba exitosamente existencia de miembros vivos");
+
+        // 6. Operador Intermedio: flatMap()
+        Escuadron esc2 = new Escuadron("Beta");
+        Guerrero g3 = new Guerrero("G3");
+        esc2.agregar(g3);
+
+        List<Escuadron> escuadrones = List.of(esc1, esc2);
+        List<Personaje> aplanados = Escuadron.aplanarCombatientesVivos(escuadrones);
+        afirmo(aplanados.size() == 2 && aplanados.contains(g1) && aplanados.contains(g3) && !aplanados.contains(g2),
+                "flatMap() aplana multiples escuadrones a una sola lista de combatientes activos");
     }
 
     // ==================================================================

@@ -8,15 +8,24 @@ import com.rpg.entities.Mago;
 import com.rpg.entities.Personaje;
 import com.rpg.model.Heroe;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /** Validates hero operations and coordinates the view, DAO, and game domain. */
 public class HeroeController {
 
     private static final String MENSAJE_NO_EXISTE = "no existe un heroe con ese id";
+
+    /**
+     * Conjunto de tipos permitidos validado usando Stream.of() y anyMatch().
+     */
+    public static final List<String> TIPOS_VALIDOS = Stream.of("guerrero", "mago")
+            .collect(Collectors.toUnmodifiableList());
 
     /**
      * Funcion lambda para transformar un modelo Heroe de la base de datos a su respectiva entidad Personaje.
@@ -191,11 +200,39 @@ public class HeroeController {
         return mapper.apply(heroe);
     }
 
+    /**
+     * Busca multiples heroes a partir de un arreglo nativo de identificadores usando Arrays.stream().
+     */
+    public List<Heroe> buscarPorIds(int[] ids) {
+        if (ids == null || ids.length == 0) {
+            return List.of();
+        }
+        return Arrays.stream(ids)
+                .filter(id -> id > 0)
+                .mapToObj(this::buscarPorId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Transforma una lista de modelos Heroe a entidades de combate Personaje usando lista.stream() y map().
+     */
+    public List<Personaje> convertirListaAEntities(List<Heroe> heroes) {
+        if (heroes == null || heroes.isEmpty()) {
+            return List.of();
+        }
+        return heroes.stream()
+                .filter(Objects::nonNull)
+                .peek(h -> System.out.println("[Debug-HeroeController] Mapeando heroe: " + h.getNombre()))
+                .map(this::convertirAEntity)
+                .collect(Collectors.toList());
+    }
+
     private static boolean tipoValido(String tipo) {
         if (tipo == null) {
             return false;
         }
         String normalizado = tipo.trim().toLowerCase(Locale.ROOT);
-        return normalizado.equals("guerrero") || normalizado.equals("mago");
+        return TIPOS_VALIDOS.stream().anyMatch(normalizado::equals);
     }
 }

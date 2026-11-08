@@ -20,6 +20,8 @@ import java.util.List;
 import java.util.OptionalInt;
 import java.util.Random;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * Coordina el flujo del juego: crear heroe, combatir, torneo, bestiario,
@@ -317,7 +319,30 @@ public class MotorJuego {
 
     // ---- resultado del combate
 
+    /**
+     * Construye un resumen dinamico de la batalla utilizando Stream.builder().
+     */
+    public String generarReporteBatallaBuilder(Personaje jugador, Enemigo enemigo, boolean huyo) {
+        Stream.Builder<String> reporteBuilder = Stream.builder();
+        reporteBuilder.add("========================================");
+        reporteBuilder.add(String.format("REPORTE DE BATALLA: %s vs %s", jugador.getNombre(), enemigo.getNombre()));
+        reporteBuilder.add("========================================");
+        reporteBuilder.add(String.format("Heroe: %s | Nivel: %d | HP: %d/%d",
+                jugador.getNombre(), jugador.getNivel(), jugador.getVida(), jugador.getVidaMaxima()));
+        reporteBuilder.add(String.format("Enemigo: %s | HP: %d/%d",
+                enemigo.getNombre(), enemigo.getVida(), enemigo.getVidaMaxima()));
+        reporteBuilder.add(String.format("Resultado final: %s",
+                huyo ? "HUIDA" : (jugador.estaVivo() ? "VICTORIA" : "DERROTA")));
+        reporteBuilder.add("========================================");
+
+        return reporteBuilder.build()
+                .collect(Collectors.joining(System.lineSeparator()));
+    }
+
     private void cerrarCombate(Personaje jugador, Enemigo enemigo, boolean huyo) {
+        String reporteFinal = generarReporteBatallaBuilder(jugador, enemigo, huyo);
+        registro.agregar("%n%s", reporteFinal);
+
         if (huyo) {
             registro.agregar("%s huye del combate.", jugador.getNombre());
         } else if (jugador.estaVivo()) {
