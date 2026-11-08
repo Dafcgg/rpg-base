@@ -115,6 +115,47 @@ public class HeroeDAO {
         }
     }
 
+    /**
+     * Busca multiples heroes por sus identificadores en una sola consulta SQL (evita N+1 queries).
+     */
+    public List<Heroe> buscarPorVariosIds(int[] ids) {
+        if (ids == null || ids.length == 0) {
+            return List.of();
+        }
+        int[] idsValidos = java.util.Arrays.stream(ids)
+                .filter(id -> id > 0)
+                .distinct()
+                .toArray();
+        if (idsValidos.length == 0) {
+            return List.of();
+        }
+
+        Connection conexion = ConexionDB.obtenerConexionGrupal();
+        if (conexion == null) {
+            return List.of();
+        }
+
+        String interrogantes = String.join(",", java.util.Collections.nCopies(idsValidos.length, "?"));
+        String sql = "SELECT id, nombre, tipo, vida_maxima, nivel FROM heroes WHERE id IN (" + interrogantes + ") ORDER BY id";
+
+        List<Heroe> heroes = new ArrayList<>(idsValidos.length);
+        try (conexion;
+             PreparedStatement sentencia = conexion.prepareStatement(sql)) {
+            for (int i = 0; i < idsValidos.length; i++) {
+                sentencia.setInt(i + 1, idsValidos[i]);
+            }
+            try (ResultSet resultados = sentencia.executeQuery()) {
+                while (resultados.next()) {
+                    heroes.add(mapear(resultados));
+                }
+            }
+        } catch (SQLException e) {
+            reportarError("buscar heroes por varios ids", e);
+            return List.of();
+        }
+        return heroes;
+    }
+
     public int actualizarNivel(int id, int nivel) {
         Connection conexion = ConexionDB.obtenerConexionGrupal();
         if (conexion == null) {

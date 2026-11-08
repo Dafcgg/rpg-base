@@ -27,25 +27,25 @@ public class Escuadron implements Serializable {
         this.nombre = nombre;
     }
 
-    public boolean agregar(Personaje personaje) {
+    public synchronized boolean agregar(Personaje personaje) {
         if (personaje == null || miembros.contains(personaje)) {
             return false;
         }
         return miembros.add(personaje);
     }
 
-    public boolean remover(Personaje personaje) {
+    public synchronized boolean remover(Personaje personaje) {
         return miembros.remove(personaje);
     }
 
     /**
      * Remueve del escuadron a todos los combatientes que cumplan con el predicado funcional.
-     * Utiliza removeIf de Collection sin recurrir a Streams.
+     * Utiliza removeIf de Collection sin recurrir a Streams de forma sincronizada.
      *
      * @param criterio Filtro de seleccion (ej. p -> !p.estaVivo() o Personaje::estaVivo negado)
      * @return true si al menos un personaje fue removido
      */
-    public boolean removerSi(Predicate<Personaje> criterio) {
+    public synchronized boolean removerSi(Predicate<Personaje> criterio) {
         if (criterio == null) {
             return false;
         }
@@ -57,11 +57,11 @@ public class Escuadron implements Serializable {
      *
      * @return true si se removio al menos un miembro caido
      */
-    public boolean limpiarMuertos() {
+    public synchronized boolean limpiarMuertos() {
         return removerSi(Predicate.not(Personaje::estaVivo));
     }
 
-    public int contarVivos() {
+    public synchronized int contarVivos() {
         int vivos = 0;
         for (Personaje personaje : miembros) {
             if (personaje.estaVivo()) {
@@ -71,7 +71,7 @@ public class Escuadron implements Serializable {
         return vivos;
     }
 
-    public void disolver() {
+    public synchronized void disolver() {
         miembros.clear();
     }
 
@@ -79,35 +79,35 @@ public class Escuadron implements Serializable {
         return nombre;
     }
 
-    public List<Personaje> getMiembros() {
-        return Collections.unmodifiableList(miembros);
+    public synchronized List<Personaje> getMiembros() {
+        return Collections.unmodifiableList(new ArrayList<>(miembros));
     }
 
     /**
-     * Retorna un flujo de personajes a partir de la coleccion de miembros (lista.stream()).
+     * Retorna una copia instantanea en Stream para evitar ConcurrentModificationException si otros hilos mutan miembros.
      */
-    public Stream<Personaje> stream() {
-        return miembros.stream();
+    public synchronized Stream<Personaje> stream() {
+        return new ArrayList<>(miembros).stream();
     }
 
     /**
      * Evalua si queda al menos un combatiente con vida mediante Stream.anyMatch().
      */
-    public boolean tieneMiembrosVivos() {
+    public synchronized boolean tieneMiembrosVivos() {
         return stream().anyMatch(Personaje::estaVivo);
     }
 
     /**
      * Obtiene los nombres de los miembros vivos usando lista.stream(), filter(),
-     * peek() para logging silencioso de depuracion, map() y collect(Collectors.toList()).
+     * peek() para logging silencioso de depuracion, map() y collect(Collectors.toUnmodifiableList()).
      */
-    public List<String> obtenerNombresVivos(boolean debug) {
+    public synchronized List<String> obtenerNombresVivos(boolean debug) {
         Stream<Personaje> flujo = stream().filter(Personaje::estaVivo);
         if (debug) {
             flujo = flujo.peek(p -> System.out.println("[Debug-Escuadron] Procesando: " + p.getNombre()));
         }
         return flujo.map(Personaje::getNombre)
-                .collect(Collectors.toList());
+                .collect(Collectors.toUnmodifiableList());
     }
 
     /**

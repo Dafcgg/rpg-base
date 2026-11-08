@@ -202,16 +202,23 @@ public class HeroeController {
 
     /**
      * Busca multiples heroes a partir de un arreglo nativo de identificadores usando Arrays.stream().
+     * Delega la consulta batch al DAO para resolver la vulnerabilidad N+1 y procesa el resultado con Streams.
      */
     public List<Heroe> buscarPorIds(int[] ids) {
         if (ids == null || ids.length == 0) {
             return List.of();
         }
-        return Arrays.stream(ids)
+        int[] idsValidos = Arrays.stream(ids)
                 .filter(id -> id > 0)
-                .mapToObj(this::buscarPorId)
+                .distinct()
+                .toArray();
+        if (idsValidos.length == 0) {
+            return List.of();
+        }
+        List<Heroe> obtenidos = heroeDAO.buscarPorVariosIds(idsValidos);
+        return obtenidos.stream()
                 .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+                .collect(Collectors.toUnmodifiableList());
     }
 
     /**
