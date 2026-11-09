@@ -27,7 +27,12 @@ public class HeroeUI {
         } catch (NoSuchElementException e) {
             System.out.println("\nEntrada finalizada. Hasta luego.");
         } finally {
-            scanner.close();
+            try {
+                // FIX: Release background game resources on exit and end of input.
+                controller.close();
+            } finally {
+                scanner.close();
+            }
         }
     }
 

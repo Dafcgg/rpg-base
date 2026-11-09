@@ -1,5 +1,11 @@
 # INFORME TECNICO - Concurrencia y persistencia en archivos
 
+> Actualizacion de auditoria: [AUDITORIA.md](AUDITORIA.md) describe el estado vigente y
+> sustituye las afirmaciones historicas sobre filtros por paquetes, el alcance del
+> temporizador y la seguridad del cierre daemon. Un monitor Java no evita una escritura
+> truncada si termina el proceso. La implementacion actual valida un temporal antes del
+> reemplazo atomico y limita el formato de carga.
+
 ## 7. Correcciones de concurrencia y persistencia
 
 | Tema | Correccion |

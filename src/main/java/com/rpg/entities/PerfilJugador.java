@@ -23,15 +23,16 @@ public class PerfilJugador implements Serializable {
     private final TreeSet<String> logros = new TreeSet<>();
 
     public synchronized void registrarVictoria() {
-        victorias++;
+        if (victorias < Integer.MAX_VALUE) victorias++; // FIX: impedir estadisticas negativas por overflow.
     }
 
     public synchronized void registrarDerrota() {
-        derrotas++;
+        if (derrotas < Integer.MAX_VALUE) derrotas++;
     }
 
     /** @return true si el logro era nuevo; false si ya estaba desbloqueado */
     public synchronized boolean desbloquearLogro(String logro) {
+        if (logro == null || logro.isBlank()) throw new IllegalArgumentException("Logro vacio"); // FIX
         return logros.add(logro);
     }
 
@@ -46,5 +47,24 @@ public class PerfilJugador implements Serializable {
     /** Los logros salen ordenados alfabeticamente porque se guardan en un TreeSet. */
     public synchronized Set<String> getLogros() {
         return Collections.unmodifiableSet(new TreeSet<>(logros));
+    }
+
+    @Serial
+    private synchronized void writeObject(java.io.ObjectOutputStream out) throws java.io.IOException {
+        out.defaultWriteObject();
+    }
+
+    @Serial
+    private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        // FIX: aceptar clases permitidas no basta: tambien hay que validar sus invariantes.
+        if (victorias < 0 || derrotas < 0 || logros == null) {
+            throw new java.io.InvalidObjectException("Perfil guardado invalido");
+        }
+        for (Object logro : logros) {
+            if (!(logro instanceof String texto) || texto.isBlank()) {
+                throw new java.io.InvalidObjectException("Logro guardado invalido");
+            }
+        }
     }
 }

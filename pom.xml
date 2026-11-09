@@ -12,6 +12,7 @@
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <rpg.build.directory>${project.basedir}/target</rpg.build.directory>
     </properties>
 
     <dependencies>
@@ -19,6 +20,13 @@
             <groupId>com.mysql</groupId>
             <artifactId>mysql-connector-j</artifactId>
             <version>8.4.0</version>
+            <!-- FIX: JDBC no usa X DevAPI; excluir su dependencia protobuf innecesaria. -->
+            <exclusions>
+                <exclusion>
+                    <groupId>com.google.protobuf</groupId>
+                    <artifactId>protobuf-java</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
@@ -29,6 +37,7 @@
     </dependencies>
 
     <build>
+        <directory>${rpg.build.directory}</directory>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -42,6 +51,9 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.2</version>
+                <configuration>
+                    <forkedProcessTimeoutInSeconds>90</forkedProcessTimeoutInSeconds>
+                </configuration>
             </plugin>
         </plugins>
     </build>

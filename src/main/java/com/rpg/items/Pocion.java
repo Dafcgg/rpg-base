@@ -33,10 +33,13 @@ public class Pocion implements Serializable {
      * @param purifica si es true, elimina los efectos de dano continuo (antidoto)
      */
     public Pocion(String nombre, int curacion, RaridadItem raridad, EstadoEfecto efecto, boolean purifica) {
+        if (nombre == null || nombre.isBlank() || curacion < 0 || raridad == null) {
+            throw new IllegalArgumentException("Pocion invalida"); // FIX: impedir curaciones negativas y NPE tardios.
+        }
         this.nombre = nombre;
         this.curacion = curacion;
         this.raridad = raridad;
-        this.efecto = efecto;
+        this.efecto = efecto == null ? null : efecto.copia();
         this.purifica = purifica;
     }
 
@@ -49,10 +52,18 @@ public class Pocion implements Serializable {
     }
 
     public EstadoEfecto getEfecto() {
-        return efecto;
+        return efecto == null ? null : efecto.copia(); // FIX: proteger el efecto de la pocion de mutacion externa.
     }
 
     public boolean isPurifica() {
         return purifica;
+    }
+
+    @Serial
+    private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        if (nombre == null || nombre.isBlank() || curacion < 0 || raridad == null) {
+            throw new java.io.InvalidObjectException("Pocion guardada invalida"); // FIX
+        }
     }
 }

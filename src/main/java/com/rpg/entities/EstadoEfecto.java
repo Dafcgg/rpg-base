@@ -23,26 +23,30 @@ public class EstadoEfecto implements Serializable {
     private int turnosRestantes;
 
     public EstadoEfecto(String nombre, TipoEfecto tipo, int valorPorTick, int duracion) {
+        // FIX: rechazar efectos que fallarian despues dentro de un hilo de combate.
+        if (nombre == null || nombre.isBlank() || tipo == null || valorPorTick < 0 || duracion < 0) {
+            throw new IllegalArgumentException("Efecto invalido");
+        }
         this.nombre = nombre;
         this.tipo = tipo;
         this.valorPorTick = valorPorTick;
         this.turnosRestantes = duracion;
     }
 
-    public EstadoEfecto copia() {
+    public synchronized EstadoEfecto copia() {
         return new EstadoEfecto(nombre, tipo, valorPorTick, turnosRestantes);
     }
 
-    public void consumirTurno() {
-        turnosRestantes--;
+    public synchronized void consumirTurno() {
+        if (turnosRestantes > 0) turnosRestantes--; // FIX: mantener el invariante de duracion >= 0.
     }
 
     /** Marca la copia como terminada (usado al cancelar el hilo del efecto). */
-    public void finalizar() {
+    public synchronized void finalizar() {
         turnosRestantes = 0;
     }
 
-    public boolean haTerminado() {
+    public synchronized boolean haTerminado() {
         return turnosRestantes <= 0;
     }
 
@@ -58,7 +62,20 @@ public class EstadoEfecto implements Serializable {
         return valorPorTick;
     }
 
-    public int getTurnosRestantes() {
+    public synchronized int getTurnosRestantes() {
         return turnosRestantes;
+    }
+
+    @Serial
+    private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        if (nombre == null || nombre.isBlank() || tipo == null || valorPorTick < 0 || turnosRestantes < 0) {
+            throw new java.io.InvalidObjectException("Efecto guardado invalido"); // FIX
+        }
+    }
+
+    @Serial
+    private synchronized void writeObject(java.io.ObjectOutputStream out) throws java.io.IOException {
+        out.defaultWriteObject();
     }
 }

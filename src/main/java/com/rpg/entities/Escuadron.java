@@ -24,6 +24,7 @@ public class Escuadron implements Serializable {
     private final ArrayList<Personaje> miembros = new ArrayList<>();
 
     public Escuadron(String nombre) {
+        if (nombre == null || nombre.isBlank()) throw new IllegalArgumentException("Escuadron sin nombre"); // FIX
         this.nombre = nombre;
     }
 
@@ -118,8 +119,30 @@ public class Escuadron implements Serializable {
             return List.of();
         }
         return escuadrones.stream()
+                .filter(java.util.Objects::nonNull) // FIX: tolerar escuadrones ausentes como la lista ausente.
                 .flatMap(Escuadron::stream)
                 .filter(Personaje::estaVivo)
                 .collect(Collectors.toList());
+    }
+
+    @Serial
+    private void writeObject(java.io.ObjectOutputStream out) throws java.io.IOException {
+        java.io.ObjectOutputStream.PutField campos = out.putFields();
+        synchronized (this) {
+            campos.put("nombre", nombre);
+            campos.put("miembros", new ArrayList<>(miembros));
+        }
+        out.writeFields(); // FIX: serializar instantanea sin mantener un bloqueo sobre otros personajes.
+    }
+
+    @Serial
+    private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        if (nombre == null || nombre.isBlank() || miembros == null) {
+            throw new java.io.InvalidObjectException("Escuadron guardado invalido");
+        }
+        for (Object miembro : miembros) {
+            if (!(miembro instanceof Personaje)) throw new java.io.InvalidObjectException("Miembro invalido");
+        }
     }
 }

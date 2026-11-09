@@ -31,31 +31,60 @@ public final class Mago extends Personaje implements Serializable {
 
     public Mago(String nombre, int mana) {
         super(nombre, TipoPersonaje.MAGO, VIDA, ATAQUE, DEFENSA);
+        if (mana < 0 || mana > MANA_MAXIMO) throw new IllegalArgumentException("Mana fuera de rango"); // FIX
         this.mana = mana;
         aprenderHabilidad(NOMBRE_ESPECIAL);
         equiparArma(new Arma("Baston de Roble", 4, RaridadItem.RARO));
     }
 
     @Override
-    public void alIniciarTurno() {
+    public synchronized void alIniciarTurno() {
         mana = Math.min(MANA_MAXIMO, mana + REGENERACION_MANA);
+    }
+
+    @Override
+    public synchronized void restaurarVida() {
+        super.restaurarVida();
+        mana = MANA_MAXIMO; // FIX: un nuevo duelo restaura tambien el recurso de clase.
     }
 
     /** Bola de Fuego: ignora la defensa del objetivo y lo deja ardiendo (DoT). */
     @Override
     public String realizarAtaqueEspecial(Personaje objetivo) throws SinManaException {
-        if (mana < COSTO_MANA_ESPECIAL) {
-            throw new SinManaException(COSTO_MANA_ESPECIAL, mana);
+        java.util.Objects.requireNonNull(objetivo, "objetivo");
+        if (objetivo == this) throw new IllegalArgumentException("Objetivo invalido");
+        if (!objetivo.estaVivo()) return objetivo.getNombre() + " ya esta derrotado"; // FIX: tolerar muerte concurrente.
+        synchronized (this) {
+            if (!estaVivo()) return getNombre() + " esta derrotado y no puede atacar";
+            if (mana < COSTO_MANA_ESPECIAL) {
+                throw new SinManaException(COSTO_MANA_ESPECIAL, mana);
+            }
+            mana -= COSTO_MANA_ESPECIAL; // FIX: reservar mana atomicamente, sin bloquear al objetivo.
         }
-        mana -= COSTO_MANA_ESPECIAL;
-        int danio = (int) Math.round(calcularDanio() * MULTIPLICADOR_ESPECIAL);
+        int danio = acotarEstadistica(calcularDanio() * MULTIPLICADOR_ESPECIAL); // FIX: cast sin overflow.
+        int vidaAntes = objetivo.getVida();
         objetivo.recibirDanio(danio);
-        objetivo.aplicarEfecto(QUEMADURA);
-        return String.format("%s lanza %s (-%d de mana) y causa %d de dano a %s, que queda en llamas",
-                getNombre(), NOMBRE_ESPECIAL, COSTO_MANA_ESPECIAL, danio, objetivo.getNombre());
+        boolean sobrevive = objetivo.estaVivo();
+        if (sobrevive) objetivo.aplicarEfecto(QUEMADURA);
+        return String.format("%s lanza %s (-%d de mana) y causa %d de dano a %s%s",
+                getNombre(), NOMBRE_ESPECIAL, COSTO_MANA_ESPECIAL, vidaAntes - objetivo.getVida(),
+                objetivo.getNombre(), sobrevive ? ", que queda en llamas" : ""); // FIX: registrar dano real.
     }
 
-    public int getMana() {
+    public synchronized int getMana() {
         return mana;
+    }
+
+    @Serial
+    private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        if (mana < 0 || mana > MANA_MAXIMO || getTipo() != TipoPersonaje.MAGO) {
+            throw new java.io.InvalidObjectException("Mago invalido"); // FIX
+        }
+    }
+
+    @Serial
+    private synchronized void writeObject(java.io.ObjectOutputStream out) throws java.io.IOException {
+        out.defaultWriteObject();
     }
 }

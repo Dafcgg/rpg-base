@@ -150,7 +150,10 @@ public class TorneoManager {
         registro.agregar("=== SEMIFINAL (%s): %s vs %s ===",
                 Thread.currentThread().getName(), a.getNombre(), b.getNombre());
         Personaje ganador = arena.duelo(a, b);
-        registro.agregar("Clasifica a la final: %s", ganador.getNombre());
+        // FIX: un duelo cancelado no tiene ganador que se pueda dereferenciar.
+        if (ganador != null) {
+            registro.agregar("Clasifica a la final: %s", ganador.getNombre());
+        }
         return ganador;
     }
 

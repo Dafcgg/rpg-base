@@ -2,6 +2,8 @@ package com.rpg.concurrency;
 
 import com.rpg.persistencia.GestorPartidas;
 
+import java.util.Objects;
+
 /**
  * Hilo daemon que guarda el estado de la partida en disco periodicamente,
  * liberando al jugador de tener que hacerlo manualmente.
@@ -39,22 +41,27 @@ import com.rpg.persistencia.GestorPartidas;
  * sincroniza internamente sobre su lock privado. Asi, si el usuario tambien guarda
  * manualmente desde el menu, no habra corrupcion del archivo.</p>
  */
-public class AutoGuardadoDaemon extends Thread {
+public final class AutoGuardadoDaemon extends Thread {
 
     private final GestorPartidas gestorPartidas;
     private final long intervaloMs;
 
     /**
-     * Construye el daemon. <strong>No llama a {@code start()}</strong>; el caller
-     * es responsable de llamar a {@code setDaemon(true)} y luego a {@code start()}.
+     * Construye y configura el daemon. <strong>No llama a {@code start()}</strong>;
+     * el caller decide cuando iniciarlo.
      *
      * @param gestorPartidas gestor de persistencia (thread-safe)
      * @param intervaloMs    milisegundos entre guardados automaticos
      */
     public AutoGuardadoDaemon(GestorPartidas gestorPartidas, long intervaloMs) {
         super("auto-guardado-daemon");
-        this.gestorPartidas = gestorPartidas;
+        // FIX: cero produce un bucle de E/S y un intervalo negativo mata el hilo.
+        if (intervaloMs <= 0) {
+            throw new IllegalArgumentException("El intervalo de guardado debe ser positivo");
+        }
+        this.gestorPartidas = Objects.requireNonNull(gestorPartidas, "gestorPartidas");
         this.intervaloMs = intervaloMs;
+        setDaemon(true);
     }
 
     @Override
@@ -63,8 +70,10 @@ public class AutoGuardadoDaemon extends Thread {
         while (!Thread.currentThread().isInterrupted()) {
             try {
                 Thread.sleep(intervaloMs);
-                gestorPartidas.guardarPerfilAutomatico();
-                System.out.println("[AutoGuardado] Partida guardada automaticamente en disco.");
+                // FIX: el resultado de E/S decide el mensaje; un fallo no es un guardado.
+                if (!Thread.currentThread().isInterrupted() && gestorPartidas.guardarPerfilAutomatico()) {
+                    System.out.println("[AutoGuardado] Partida guardada automaticamente en disco.");
+                }
             } catch (InterruptedException e) {
                 // Restaurar bandera y salir limpiamente
                 Thread.currentThread().interrupt();

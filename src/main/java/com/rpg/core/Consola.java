@@ -14,6 +14,7 @@ public class Consola {
 
     /** Canal con lectura limitada por tiempo; {@code null} si el Scanner lee directo de System.in. */
     private final EntradaConsola entrada;
+    private boolean esperaPreparada;
 
     /**
      * @param scanner scanner construido sobre {@code entrada}
@@ -29,6 +30,13 @@ public class Consola {
      */
     public void prepararEsperaConLimite() {
         entrada.armar();
+        esperaPreparada = true;
+    }
+
+    /** Cierra una espera compartida por varias lecturas del mismo turno. */
+    public void finalizarEsperaConLimite() {
+        esperaPreparada = false;
+        entrada.desarmar();
     }
 
     /**
@@ -46,7 +54,11 @@ public class Consola {
      * @return el numero elegido, o vacio si el tiempo se agoto (o el hilo fue interrumpido)
      */
     public OptionalInt leerEnteroConLimite(String mensaje, int minimo, int maximo) {
-        entrada.armar();
+        validarRango(minimo, maximo);
+        // FIX: conservar la expiracion que llego entre arrancar el reloj y esperar entrada.
+        if (!esperaPreparada) {
+            entrada.armar();
+        }
         try {
             while (true) {
                 System.out.print(mensaje);
@@ -75,7 +87,10 @@ public class Consola {
                 }
             }
         } finally {
-            entrada.desarmar();
+            // FIX: en una sesion explicita, el plazo sigue vigente entre submenus.
+            if (!esperaPreparada) {
+                entrada.desarmar();
+            }
         }
     }
 
@@ -85,6 +100,7 @@ public class Consola {
     }
 
     public int leerEntero(String mensaje, int minimo, int maximo) {
+        validarRango(minimo, maximo);
         while (true) {
             String texto = leerLinea(mensaje);
             if (texto.isEmpty()) {
@@ -100,6 +116,12 @@ public class Consola {
             } catch (NumberFormatException e) {
                 System.out.println("Entrada no valida. Ingresa un numero entero.");
             }
+        }
+    }
+
+    private static void validarRango(int minimo, int maximo) {
+        if (minimo > maximo) {
+            throw new IllegalArgumentException("El rango de entrada es invalido");
         }
     }
 

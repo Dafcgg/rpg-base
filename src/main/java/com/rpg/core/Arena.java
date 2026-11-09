@@ -47,10 +47,11 @@ public class Arena {
         if (atacante == null) {
             return 0;
         }
-        int danio = atacante.calcularDanio();
+        // FIX: nivel, bonificaciones y criticos no deben desbordar un int.
+        long danio = atacante.calcularDanio();
         // Bonificacion segun ventaja de nivel
         if (defensor != null) {
-            int diferenciaNivel = atacante.getNivel() - defensor.getNivel();
+            long diferenciaNivel = (long) atacante.getNivel() - defensor.getNivel();
             if (diferenciaNivel > 0) {
                 danio += diferenciaNivel * 2;
             }
@@ -59,13 +60,17 @@ public class Arena {
                 danio += 2;
             }
         }
-        return Math.max(1, danio);
+        return saturarDanio(danio);
     };
 
     /**
      * Expresion lambda propia (AccionCombate): Ataque fisico directo y contundente.
      */
     public static final AccionCombate ATAQUE_FISICO = (atacante, defensor) -> {
+        validarCombatientes(atacante, defensor);
+        if (!atacante.estaVivo() || !defensor.estaVivo()) {
+            return "Ataque cancelado: un combatiente esta derrotado";
+        }
         int danioBase = CALCULADOR_DANIO_BASE.apply(atacante, defensor);
         int vidaAntes = defensor.getVida();
         defensor.defender(danioBase);
@@ -78,7 +83,11 @@ public class Arena {
      * Expresion lambda propia (AccionCombate): Ataque magico que penetra armadura y afecta mana.
      */
     public static final AccionCombate ATAQUE_MAGICO = (atacante, defensor) -> {
-        int danioBase = (int) Math.round(CALCULADOR_DANIO_BASE.apply(atacante, defensor) * 1.25);
+        validarCombatientes(atacante, defensor);
+        if (!atacante.estaVivo() || !defensor.estaVivo()) {
+            return "Ataque cancelado: un combatiente esta derrotado";
+        }
+        int danioBase = saturarDanio(Math.round(CALCULADOR_DANIO_BASE.apply(atacante, defensor) * 1.25));
         int vidaAntes = defensor.getVida();
         // Danio magico directo a los puntos de vida
         APLICAR_DANIO.accept(defensor, Math.max(1, danioBase));
@@ -88,12 +97,16 @@ public class Arena {
     };
 
     public Arena(RegistroCombate registro, Random azar) {
-        this.registro = registro;
-        this.azar = azar;
+        this.registro = Objects.requireNonNull(registro, "registro");
+        this.azar = Objects.requireNonNull(azar, "azar");
     }
 
     /** Procesa efectos y aturdimiento. @return true si el personaje puede actuar este turno */
     public boolean iniciarTurno(Personaje personaje) {
+        Objects.requireNonNull(personaje, "personaje");
+        if (!personaje.estaVivo() || Thread.currentThread().isInterrupted()) {
+            return false;
+        }
         personaje.alIniciarTurno();
         for (String mensaje : personaje.procesarEfectos()) {
             registro.agregar(mensaje);
@@ -110,10 +123,14 @@ public class Arena {
     }
 
     public void atacar(Personaje atacante, Personaje defensor) {
+        validarCombatientes(atacante, defensor);
+        if (!atacante.estaVivo() || !defensor.estaVivo() || Thread.currentThread().isInterrupted()) {
+            return;
+        }
         boolean critico = azar.nextInt(100) < PROBABILIDAD_CRITICO;
         double factor = critico ? FACTOR_CRITICO : 1.0;
         int danioBase = CALCULADOR_DANIO_BASE.apply(atacante, defensor);
-        int danioBruto = (int) Math.round(danioBase * factor) + azar.nextInt(VARIACION_DANIO + 1);
+        int danioBruto = saturarDanio(Math.round(danioBase * factor) + azar.nextInt(VARIACION_DANIO + 1));
         int vidaAntes = defensor.getVida();
         defensor.defender(danioBruto);
         registro.agregar("%s ataca a %s%s y causa %d de dano", atacante.getNombre(), defensor.getNombre(),
@@ -145,6 +162,10 @@ public class Arena {
 
     /** @return true si el especial se ejecuto; false si fallo por falta de mana o de vida */
     public boolean intentarEspecial(Personaje atacante, Personaje defensor) {
+        validarCombatientes(atacante, defensor);
+        if (!atacante.estaVivo() || !defensor.estaVivo() || Thread.currentThread().isInterrupted()) {
+            return false;
+        }
         try {
             registro.agregar(atacante.realizarAtaqueEspecial(defensor));
             registro.agregar("   %s", FormatoCombate.resumen(defensor));
@@ -169,11 +190,37 @@ public class Arena {
 
     /** Pelea hasta que uno cae (o se acaban las rondas). @return el ganador */
     public Personaje duelo(Personaje a, Personaje b) {
-        for (int ronda = 1; ronda <= MAXIMO_RONDAS && a.estaVivo() && b.estaVivo(); ronda++) {
-            registro.agregar("-- Ronda %d --", ronda);
-            turnoAutomatico(a, b);
-            turnoAutomatico(b, a);
+        validarCombatientes(a, b);
+        try {
+            for (int ronda = 1; ronda <= MAXIMO_RONDAS && a.estaVivo() && b.estaVivo(); ronda++) {
+                // FIX: las semifinales obedecen la cancelacion tambien durante el combate.
+                if (Thread.currentThread().isInterrupted()) {
+                    return null;
+                }
+                registro.agregar("-- Ronda %d --", ronda);
+                turnoAutomatico(a, b);
+                turnoAutomatico(b, a);
+            }
+        } finally {
+            // FIX: ningun efecto continua atacando despues de decidir un ganador.
+            a.detenerEfectos();
+            b.detenerEfectos();
+        }
+        if (Thread.currentThread().isInterrupted() || (!a.estaVivo() && !b.estaVivo())) {
+            return null;
         }
         return a.getVida() >= b.getVida() ? a : b;
+    }
+
+    private static int saturarDanio(long danio) {
+        return (int) Math.max(1L, Math.min(Integer.MAX_VALUE, danio));
+    }
+
+    private static void validarCombatientes(Personaje atacante, Personaje defensor) {
+        Objects.requireNonNull(atacante, "atacante");
+        Objects.requireNonNull(defensor, "defensor");
+        if (atacante == defensor) {
+            throw new IllegalArgumentException("Un combatiente no puede atacarse a si mismo");
+        }
     }
 }

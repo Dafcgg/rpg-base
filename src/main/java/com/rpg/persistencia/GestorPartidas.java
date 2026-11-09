@@ -1,330 +1,295 @@
 package com.rpg.persistencia;
 
-import com.rpg.entities.Personaje;
 import com.rpg.entities.PerfilJugador;
+import com.rpg.entities.Personaje;
 
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
+import java.io.FilterInputStream;
+import java.io.FilterOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InvalidObjectException;
 import java.io.ObjectInputFilter;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.Objects;
+import java.util.Set;
 
-/**
- * Servicio de persistencia binaria para partidas del juego RPG.
- *
- * <h2>Estructura de archivos</h2>
- * <pre>
- * partidas/
- *   perfil_jugador.dat    <- guardado principal del perfil
- *   perfil_auto.dat       <- guardado automatico del daemon
- * </pre>
- *
- * <h2>Sincronizacion</h2>
- * <p>Todas las operaciones de E/S se realizan dentro de bloques
- * {@code synchronized(lock)} para evitar colisiones entre el guardado manual
- * del usuario y el {@link com.rpg.concurrency.AutoGuardadoDaemon}.</p>
- *
- * <h2>FileWriter vs Files.writeString - Comparativa</h2>
- * <ul>
- *   <li><strong>{@code FileWriter} + {@code BufferedWriter}:</strong> Escribe con
- *       bufer; ideal para escrituras incrementales (append de logs). El bufer
- *       acumula bytes hasta que se llama a {@code flush()} o {@code close()}.
- *       Mejor rendimiento en escrituras frecuentes y pequenas.</li>
- *   <li><strong>{@code Files.writeString} (NIO):</strong> Escribe todo el contenido
- *       de golpe (atomico a nivel de API, aunque el SO no garantiza atomicidad en
- *       disco). Conveniente para escribir un String completo de una sola vez.
- *       Internamente abre, escribe y cierra el canal en una sola llamada.</li>
- *   <li><strong>Regla practica:</strong> usa {@code BufferedWriter} para streams
- *       con muchas escrituras pequenas (historial de combate linea a linea);
- *       usa {@code Files.writeString} cuando quieras escribir texto completo
- *       de forma concisa y la frecuencia de escritura es baja.</li>
- * </ul>
- *
- * <h2>Seguridad en Serializacion</h2>
- * <p>{@code ObjectInputStream.readObject()} puede ejecutar bloques de codigo
- * arbitrario a traves del mecanismo de {@code readObject()} personalizado en
- * clases maliciosas (gadget chains). Riesgos:</p>
- * <ul>
- *   <li>Ejecucion remota de codigo (RCE) si se deserializa de fuentes no confiables.</li>
- *   <li>Denegacion de servicio (DoS) por objetos que consumen memoria excesiva.</li>
- * </ul>
- * <p><strong>Alternativas mas seguras:</strong></p>
- * <ul>
- *   <li>Formatos planos (CSV, properties) para datos simples.</li>
- *   <li>JSON (Jackson, Gson) con clases POJO explicitas - sin codigo ejecutable.</li>
- *   <li>Usar {@code ObjectInputFilter} (Java 9+) para permitir solo clases esperadas.</li>
- * </ul>
- */
+/** Persistencia local con reemplazo atomico y deserializacion limitada al dominio. */
 public class GestorPartidas {
 
-    private static final String DIRECTORIO = "partidas";
     private static final String ARCHIVO_PERFIL = "perfil_jugador.dat";
     private static final String ARCHIVO_AUTO = "perfil_auto.dat";
     private static final String ARCHIVO_PERSONAJE = "personaje.dat";
+    private static final long MAX_BYTES = 1_048_576;
+    private static final Set<String> CLASES_PERMITIDAS = Set.of(
+            "com.rpg.entities.Personaje", "com.rpg.entities.Guerrero", "com.rpg.entities.Mago",
+            "com.rpg.entities.Enemigo", "com.rpg.entities.PerfilJugador", "com.rpg.entities.Arma",
+            "com.rpg.entities.Gremio", "com.rpg.entities.EstadoEfecto", "com.rpg.items.Inventario",
+            "com.rpg.items.Pocion", "com.rpg.entities.enums.TipoPersonaje",
+            "com.rpg.entities.enums.EstadoPersonaje", "com.rpg.entities.enums.TipoEfecto",
+            "com.rpg.entities.enums.RaridadItem", "java.lang.String", "java.lang.Object",
+            "java.lang.Enum", "java.util.ArrayList", "java.util.HashSet", "java.util.TreeSet",
+            "java.util.HashMap", "java.util.LinkedHashMap", "java.util.Map$Entry");
 
-    /**
-     * Filtro de deserializacion: solo se aceptan clases del proyecto y de java.base;
-     * cualquier otra clase (por ejemplo una cadena de gadgets) se rechaza.
-     */
-    private static final ObjectInputFilter FILTRO_DESERIALIZACION =
-            ObjectInputFilter.Config.createFilter("com.rpg.**;java.base/*;!*");
-
-    /** Lock de sincronizacion compartido entre guardado manual y daemon. */
-    private final Object lock = new Object();
-
-    /** Referencia volatil al perfil activo para el daemon de autoguardado. */
+    // FIX: todas las instancias coordinan reemplazos y borrados del mismo archivo.
+    private static final Object LOCK_ARCHIVOS = new Object();
+    private final Path directorio;
     private volatile PerfilJugador perfilActual;
 
     public GestorPartidas() {
-        // Crear el directorio de partidas si no existe
-        File directorio = new File(DIRECTORIO);
-        if (!directorio.exists()) {
-            boolean creado = directorio.mkdirs();
-            if (creado) {
-                System.out.println("[GestorPartidas] Directorio 'partidas/' creado.");
-            }
+        this(Path.of("partidas"));
+    }
+
+    /** Permite aislar partidas de jugadores y pruebas sin modificar user.dir. */
+    public GestorPartidas(Path directorio) {
+        this.directorio = Objects.requireNonNull(directorio, "directorio").toAbsolutePath().normalize();
+        try {
+            Files.createDirectories(this.directorio);
+        } catch (IOException e) {
+            // FIX: informar el fallo; guardar() devolvera false sin fingir persistencia.
+            System.err.println("[GestorPartidas] No se pudo crear el directorio: " + e.getMessage());
         }
     }
 
-    // ---------------------------------------------------------
-    // Guardado y carga del perfil del jugador
-    // ---------------------------------------------------------
-
-    /**
-     * Registra el perfil activo para que el daemon de autoguardado pueda
-     * persistirlo sin necesidad de parametros adicionales.
-     *
-     * @param perfil perfil a mantener en memoria
-     */
     public void setPerfilActual(PerfilJugador perfil) {
-        this.perfilActual = perfil;
-    }
-
-    /**
-     * Guarda el {@link PerfilJugador} en disco como objeto serializado.
-     * Usa {@code try-with-resources} para garantizar el cierre de flujos.
-     *
-     * @param perfil objeto a persistir
-     */
-    public void guardarPerfil(PerfilJugador perfil) {
-        synchronized (lock) {
-            File archivo = new File(DIRECTORIO, ARCHIVO_PERFIL);
-            File dir = archivo.getParentFile();
-            if (dir != null && !dir.exists()) {
-                dir.mkdirs();
-            }
-            try (ObjectOutputStream oos = new ObjectOutputStream(
-                    new FileOutputStream(archivo))) {
-                synchronized (perfil) { // el daemon y el juego no deben mutar el perfil mientras se serializa
-                    oos.writeObject(perfil);
-                }
-                System.out.printf("[GestorPartidas] Perfil guardado en: %s%n",
-                        archivo.getAbsolutePath());
-            } catch (IOException e) {
-                System.err.println("[GestorPartidas] Error al guardar perfil: " + e.getMessage());
-            }
+        synchronized (LOCK_ARCHIVOS) {
+            this.perfilActual = perfil;
         }
     }
 
-    /**
-     * Invocado por {@link com.rpg.concurrency.AutoGuardadoDaemon} para guardar
-     * el perfil activo de forma automatica.
-     */
-    public void guardarPerfilAutomatico() {
-        PerfilJugador perfil = perfilActual;
-        if (perfil == null) {
-            return;
-        }
-        synchronized (lock) {
-            File archivo = new File(DIRECTORIO, ARCHIVO_AUTO);
-            File dir = archivo.getParentFile();
-            if (dir != null && !dir.exists()) {
-                dir.mkdirs();
-            }
-            try (ObjectOutputStream oos = new ObjectOutputStream(
-                    new FileOutputStream(archivo))) {
-                synchronized (perfil) {
-                    oos.writeObject(perfil);
-                }
-            } catch (IOException e) {
-                System.err.println("[AutoGuardado] Error: " + e.getMessage());
-            }
+    /** @return false ante fallo; nunca informa exito sin confirmar el reemplazo. */
+    public boolean guardarPerfil(PerfilJugador perfil) {
+        return guardar(ARCHIVO_PERFIL, perfil);
+    }
+
+    public boolean guardarPerfilAutomatico() {
+        synchronized (LOCK_ARCHIVOS) {
+            // FIX: cambiar de perfil no permite un guardado tardio del perfil anterior.
+            PerfilJugador perfil = perfilActual;
+            return perfil != null && guardar(ARCHIVO_AUTO, perfil);
         }
     }
 
-    /**
-     * Carga el {@link PerfilJugador} desde el archivo de partida principal.
-     *
-     * @return el perfil deserializado, o {@code null} si el archivo no existe o hay error
-     */
     public PerfilJugador cargarPerfil() {
-        synchronized (lock) {
-            File archivo = new File(DIRECTORIO, ARCHIVO_PERFIL);
-            if (!archivo.exists()) {
-                System.out.println("[GestorPartidas] No se encontro ninguna partida guardada.");
-                return null;
-            }
-            try (ObjectInputStream ois = new ObjectInputStream(
-                    new FileInputStream(archivo))) {
-                ois.setObjectInputFilter(FILTRO_DESERIALIZACION);
-                Object obj = ois.readObject();
-                if (obj instanceof PerfilJugador perfil) {
-                    System.out.printf("[GestorPartidas] Perfil cargado: victorias=%d, derrotas=%d%n",
-                            perfil.getVictorias(), perfil.getDerrotas());
-                    return perfil;
-                } else {
-                    System.err.println("[GestorPartidas] Tipo de objeto inesperado en el archivo.");
-                    return null;
-                }
-            } catch (FileNotFoundException e) {
-                System.out.println("[GestorPartidas] Archivo de partida no encontrado.");
-                return null;
-            } catch (ClassNotFoundException e) {
-                System.err.println("[GestorPartidas] Clase no encontrada al deserializar: " + e.getMessage());
-                return null;
-            } catch (IOException e) {
-                System.err.println("[GestorPartidas] Error al cargar partida: " + e.getMessage());
-                return null;
-            }
-        }
+        return cargar(ARCHIVO_PERFIL, PerfilJugador.class);
     }
 
-    // ---------------------------------------------------------
-    // Metadatos y gestion de archivos
-    // ---------------------------------------------------------
-
-    /**
-     * Muestra metadatos del archivo de partida guardada.
-     */
-    public void mostrarMetadatos() {
-        synchronized (lock) {
-            File archivo = new File(DIRECTORIO, ARCHIVO_PERFIL);
-            System.out.println("\n=== METADATOS DE PARTIDA ===");
-            if (!archivo.exists()) {
-                System.out.println("  No hay partida guardada.");
-                return;
-            }
-            System.out.println("  Nombre   : " + archivo.getName());
-            System.out.println("  Ruta rel : " + archivo.getPath());
-            System.out.println("  Ruta abs : " + archivo.getAbsolutePath());
-            System.out.printf("  Tamano   : %d bytes%n", archivo.length());
-            System.out.println("  Existe   : " + archivo.exists());
-            System.out.println("  Legible  : " + archivo.canRead());
-        }
+    public boolean guardarPersonaje(Personaje personaje) {
+        return guardar(ARCHIVO_PERSONAJE, personaje);
     }
 
-    /**
-     * Elimina el autoguardado con {@link File#delete()}.
-     *
-     * <h3>File.delete() vs Files.deleteIfExists(Path)</h3>
-     * <ul>
-     *   <li>{@code File.delete()} devuelve solo un {@code boolean}: {@code false} significa
-     *       "no existia" O "fallo" y no se puede distinguir la causa.</li>
-     *   <li>{@code Files.deleteIfExists(Path)} devuelve {@code false} solo si no existia y
-     *       lanza {@code IOException} con la causa real (permisos, directorio no vacio...).</li>
-     * </ul>
-     * Por eso la partida principal se borra con NIO y el autoguardado con la API clasica,
-     * para demostrar ambas.
-     *
-     * @return {@code true} si el archivo existia y se elimino
-     */
-    public boolean eliminarAutoguardado() {
-        synchronized (lock) {
-            File archivo = new File(DIRECTORIO, ARCHIVO_AUTO);
-            boolean eliminado = archivo.delete();
-            System.out.println(eliminado
-                    ? "[GestorPartidas] Autoguardado eliminado con File.delete()."
-                    : "[GestorPartidas] File.delete() devolvio false (no existia o no se pudo borrar).");
-            return eliminado;
-        }
+    public Personaje cargarPersonaje() {
+        return cargar(ARCHIVO_PERSONAJE, Personaje.class);
     }
 
-    /**
-     * Elimina la partida guardada principal (con {@code Files.deleteIfExists}) y el autoguardado
-     * (con {@code File.delete()}).
-     *
-     * @return {@code true} si se elimino con exito la partida principal
-     */
-    public boolean eliminarPartida() {
-        synchronized (lock) {
-            Path ruta = Paths.get(DIRECTORIO, ARCHIVO_PERFIL);
+    private boolean guardar(String nombreArchivo, Object objeto) {
+        if (objeto == null) {
+            System.err.println("[GestorPartidas] No se puede guardar un objeto nulo.");
+            return false;
+        }
+        synchronized (LOCK_ARCHIVOS) {
+            Path temporal = null;
             try {
-                boolean eliminado = Files.deleteIfExists(ruta);
-                if (eliminado) {
-                    System.out.println("[GestorPartidas] Partida eliminada.");
-                } else {
-                    System.out.println("[GestorPartidas] No habia partida que eliminar.");
+                Files.createDirectories(directorio);
+                temporal = Files.createTempFile(directorio, nombreArchivo + ".", ".tmp");
+                // FIX: escribir/cerrar/forzar el temporal antes de tocar una partida valida.
+                try (FileOutputStream archivo = new FileOutputStream(temporal.toFile());
+                     ObjectOutputStream salida = new ObjectOutputStream(new SalidaLimitada(archivo))) {
+                    synchronized (objeto) {
+                        salida.writeObject(objeto);
+                    }
+                    salida.flush();
+                    archivo.getFD().sync();
                 }
-                eliminarAutoguardado();
+                // FIX: solo confirmar partidas que el propio lector pueda reconstruir.
+                Class<?> tipoEsperado = objeto instanceof PerfilJugador ? PerfilJugador.class : Personaje.class;
+                leerValidado(temporal, tipoEsperado);
+                // Sin fallback no atomico: si el sistema no lo soporta se conserva el anterior.
+                Files.move(temporal, directorio.resolve(nombreArchivo),
+                        StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+                return true;
+            } catch (IOException | ClassNotFoundException | RuntimeException e) {
+                System.err.println("[GestorPartidas] No se pudo guardar la partida: " + e.getMessage());
+                return false;
+            } finally {
+                if (temporal != null) {
+                    try {
+                        Files.deleteIfExists(temporal);
+                    } catch (IOException e) {
+                        System.err.println("[GestorPartidas] No se pudo limpiar el temporal: " + e.getMessage());
+                    }
+                }
+            }
+        }
+    }
+
+    private <T> T cargar(String nombreArchivo, Class<T> tipo) {
+        synchronized (LOCK_ARCHIVOS) {
+            Path ruta = directorio.resolve(nombreArchivo);
+            if (!Files.exists(ruta)) {
+                System.out.println("[GestorPartidas] No hay partida guardada.");
+                return null;
+            }
+            try {
+                // FIX: limite previo incluye Strings, a los que ObjectInputFilter no filtra.
+                if (Files.size(ruta) > MAX_BYTES) {
+                    throw new InvalidObjectException("La partida supera el limite de 1 MiB");
+                }
+                return leerValidado(ruta, tipo);
+            } catch (IOException | ClassNotFoundException | RuntimeException e) {
+                System.err.println("[GestorPartidas] No se pudo cargar la partida: " + e.getMessage());
+                return null;
+            }
+        }
+    }
+
+    private static <T> T leerValidado(Path ruta, Class<T> tipo) throws IOException, ClassNotFoundException {
+        // FIX: el limite del flujo cierra la carrera entre comprobar el tamano y leer Strings.
+        // Declarar tambien el archivo evita fugas si el constructor lee una cabecera corrupta.
+        try (FileInputStream archivo = new FileInputStream(ruta.toFile());
+             ObjectInputStream entrada = new EntradaObjetosLimitada(archivo)) {
+            entrada.setObjectInputFilter(GestorPartidas::filtrar);
+            Object objeto = entrada.readObject();
+            if (!tipo.isInstance(objeto)) {
+                throw new InvalidObjectException("Tipo de partida inesperado");
+            }
+            return tipo.cast(objeto);
+        }
+    }
+
+    private static final class EntradaObjetosLimitada extends ObjectInputStream {
+        private long objetos;
+
+        private EntradaObjetosLimitada(InputStream origen) throws IOException {
+            super(new EntradaLimitada(origen));
+            enableResolveObject(true);
+        }
+
+        @Override protected Object resolveObject(Object objeto) throws IOException {
+            // FIX: Strings no pasan por ObjectInputFilter; contar tambien esos objetos.
+            if (++objetos > 10_000) throw new InvalidObjectException("Demasiados objetos en la partida");
+            return objeto;
+        }
+    }
+
+    private static final class EntradaLimitada extends FilterInputStream {
+        private long restantes = MAX_BYTES;
+
+        private EntradaLimitada(InputStream origen) {
+            super(origen);
+        }
+
+        private void comprobarLimite() throws IOException {
+            if (restantes == 0) throw new IOException("La partida supera el limite de 1 MiB");
+        }
+
+        @Override public int read() throws IOException {
+            comprobarLimite();
+            int valor = in.read();
+            if (valor != -1) restantes--;
+            return valor;
+        }
+
+        @Override public int read(byte[] bytes, int desde, int largo) throws IOException {
+            Objects.checkFromIndexSize(desde, largo, bytes.length);
+            if (largo == 0) return 0;
+            comprobarLimite();
+            int leidos = in.read(bytes, desde, (int) Math.min(largo, restantes));
+            if (leidos > 0) restantes -= leidos;
+            return leidos;
+        }
+
+        @Override public long skip(long cantidad) throws IOException {
+            if (cantidad <= 0) return 0;
+            comprobarLimite();
+            long saltados = in.skip(Math.min(cantidad, restantes));
+            restantes -= saltados;
+            return saltados;
+        }
+    }
+
+    private static final class SalidaLimitada extends FilterOutputStream {
+        private long restantes = MAX_BYTES;
+
+        private SalidaLimitada(OutputStream destino) {
+            super(destino);
+        }
+
+        private void reservar(int cantidad) throws IOException {
+            if (cantidad > restantes) throw new IOException("La partida supera el limite de 1 MiB");
+            restantes -= cantidad;
+        }
+
+        @Override public void write(int valor) throws IOException {
+            reservar(1);
+            out.write(valor);
+        }
+
+        @Override public void write(byte[] bytes, int desde, int largo) throws IOException {
+            Objects.checkFromIndexSize(desde, largo, bytes.length);
+            reservar(largo);
+            out.write(bytes, desde, largo);
+        }
+    }
+
+    private static ObjectInputFilter.Status filtrar(ObjectInputFilter.FilterInfo info) {
+        // FIX: lista cerrada, profundidad, referencias, bytes y arrays acotados contra DoS.
+        if (info.depth() > 32 || info.references() > 10_000 || info.streamBytes() > MAX_BYTES
+                || info.arrayLength() > 10_000) {
+            return ObjectInputFilter.Status.REJECTED;
+        }
+        Class<?> tipo = info.serialClass();
+        if (tipo == null) {
+            return ObjectInputFilter.Status.UNDECIDED;
+        }
+        while (tipo.isArray()) {
+            tipo = tipo.getComponentType();
+        }
+        return tipo.isPrimitive() || CLASES_PERMITIDAS.contains(tipo.getName())
+                ? ObjectInputFilter.Status.ALLOWED : ObjectInputFilter.Status.REJECTED;
+    }
+
+    public void mostrarMetadatos() {
+        synchronized (LOCK_ARCHIVOS) {
+            File archivo = directorio.resolve(ARCHIVO_PERFIL).toFile();
+            System.out.println("\n=== METADATOS DE PARTIDA ===");
+            System.out.println("  Nombre   : " + archivo.getName());
+            System.out.println("  Ruta abs : " + archivo.getAbsolutePath());
+            System.out.println("  Existe   : " + archivo.exists());
+            System.out.printf("  Tamano   : %d bytes%n", archivo.length());
+        }
+    }
+
+    /** API clasica conservada para la demostracion del taller. */
+    public boolean eliminarAutoguardado() {
+        synchronized (LOCK_ARCHIVOS) {
+            return directorio.resolve(ARCHIVO_AUTO).toFile().delete();
+        }
+    }
+
+    public boolean eliminarPartida() {
+        synchronized (LOCK_ARCHIVOS) {
+            try {
+                boolean eliminado = Files.deleteIfExists(directorio.resolve(ARCHIVO_PERFIL));
+                Files.deleteIfExists(directorio.resolve(ARCHIVO_AUTO));
                 return eliminado;
             } catch (IOException e) {
-                System.err.println("[GestorPartidas] Error al eliminar partida: " + e.getMessage());
+                System.err.println("[GestorPartidas] No se pudo eliminar la partida: " + e.getMessage());
                 return false;
             }
         }
     }
 
-    /**
-     * Verifica si existe una partida guardada en disco.
-     *
-     * @return {@code true} si el archivo de partida principal existe
-     */
     public boolean existePartida() {
-        synchronized (lock) {
-            return new File(DIRECTORIO, ARCHIVO_PERFIL).exists();
-        }
-    }
-
-    // ---------------------------------------------------------
-    // Serializacion de un Personaje completo (agregacion/composicion)
-    // ---------------------------------------------------------
-
-    /**
-     * Serializa un {@link Personaje} con todo su grafo: arma (agregacion), gremio (asociacion
-     * bidireccional), inventario con pociones (composicion) y efectos. Los hilos de efectos son
-     * {@code transient} y no se guardan.
-     */
-    public boolean guardarPersonaje(Personaje personaje) {
-        synchronized (lock) {
-            File archivo = new File(DIRECTORIO, ARCHIVO_PERSONAJE);
-            File dir = archivo.getParentFile();
-            if (dir != null && !dir.exists()) {
-                dir.mkdirs();
-            }
-            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(archivo))) {
-                synchronized (personaje) {
-                    oos.writeObject(personaje);
-                }
-                return true;
-            } catch (IOException e) {
-                System.err.println("[GestorPartidas] Error al guardar personaje: " + e.getMessage());
-                return false;
-            }
-        }
-    }
-
-    /** @return el personaje deserializado (con filtro de clases) o null si no existe o falla */
-    public Personaje cargarPersonaje() {
-        synchronized (lock) {
-            File archivo = new File(DIRECTORIO, ARCHIVO_PERSONAJE);
-            if (!archivo.exists()) {
-                System.out.println("[GestorPartidas] No hay personaje guardado.");
-                return null;
-            }
-            try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(archivo))) {
-                ois.setObjectInputFilter(FILTRO_DESERIALIZACION);
-                Object obj = ois.readObject();
-                return obj instanceof Personaje p ? p : null;
-            } catch (ClassNotFoundException | IOException e) {
-                System.err.println("[GestorPartidas] Error al cargar personaje: " + e.getMessage());
-                return null;
-            }
+        synchronized (LOCK_ARCHIVOS) {
+            return Files.isRegularFile(directorio.resolve(ARCHIVO_PERFIL));
         }
     }
 }

@@ -19,6 +19,9 @@ import java.util.List;
  */
 public class Gremio implements Serializable {
 
+    // FIX: un unico orden de bloqueo protege ambos extremos de la relacion bidireccional.
+    static final Object MEMBRESIA_LOCK = new Object();
+
     @Serial
     private static final long serialVersionUID = 1L;
 
@@ -26,25 +29,22 @@ public class Gremio implements Serializable {
     private final ArrayList<Personaje> miembros = new ArrayList<>();
 
     public Gremio(String nombre) {
+        if (nombre == null || nombre.isBlank()) throw new IllegalArgumentException("Gremio sin nombre");
         this.nombre = nombre;
     }
 
     public void agregarMiembro(Personaje personaje) {
-        if (personaje == null || miembros.contains(personaje)) {
-            return;
-        }
-        miembros.add(personaje);
-        if (personaje.getGremio() != this) {
-            personaje.unirseAGremio(this);
+        synchronized (MEMBRESIA_LOCK) {
+            if (personaje == null || miembros.contains(personaje)) return;
+            miembros.add(personaje);
+            if (personaje.getGremio() != this) personaje.unirseAGremio(this);
         }
     }
 
     public void removerMiembro(Personaje personaje) {
-        if (!miembros.remove(personaje)) {
-            return;
-        }
-        if (personaje.getGremio() == this) {
-            personaje.abandonarGremio();
+        synchronized (MEMBRESIA_LOCK) {
+            if (!miembros.remove(personaje)) return;
+            if (personaje.getGremio() == this) personaje.abandonarGremio();
         }
     }
 
@@ -53,6 +53,29 @@ public class Gremio implements Serializable {
     }
 
     public List<Personaje> getMiembros() {
-        return Collections.unmodifiableList(miembros);
+        synchronized (MEMBRESIA_LOCK) {
+            return List.copyOf(miembros); // FIX: no devolver una vista viva de la coleccion mutable.
+        }
+    }
+
+    @Serial
+    private void writeObject(java.io.ObjectOutputStream out) throws java.io.IOException {
+        java.io.ObjectOutputStream.PutField campos = out.putFields();
+        synchronized (MEMBRESIA_LOCK) {
+            campos.put("nombre", nombre);
+            campos.put("miembros", new ArrayList<>(miembros));
+        }
+        out.writeFields(); // FIX: soltar el bloqueo de membresia antes de recorrer el grafo ciclico.
+    }
+
+    @Serial
+    private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        if (nombre == null || nombre.isBlank() || miembros == null) {
+            throw new java.io.InvalidObjectException("Gremio guardado invalido");
+        }
+        for (Object miembro : miembros) {
+            if (!(miembro instanceof Personaje)) throw new java.io.InvalidObjectException("Miembro invalido");
+        }
     }
 }

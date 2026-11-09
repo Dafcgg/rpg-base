@@ -16,14 +16,12 @@ CREATE TABLE IF NOT EXISTS heroes (
     CONSTRAINT chk_heroes_tipo CHECK (tipo IN ('guerrero', 'mago')),
     CONSTRAINT chk_heroes_vida CHECK (vida_maxima > 0),
     CONSTRAINT chk_heroes_nivel CHECK (nivel >= 1)
-);
+) ENGINE=InnoDB;
 
 INSERT INTO heroes (nombre, tipo, vida_maxima, nivel)
 VALUES
     ('Aria', 'guerrero', 150, 4),
     ('Merlin', 'mago', 110, 3)
-AS demo
+-- FIX: Re-running the demo must not overwrite a player's stored health or level.
 ON DUPLICATE KEY UPDATE
-    tipo = demo.tipo,
-    vida_maxima = demo.vida_maxima,
-    nivel = demo.nivel;
+    id = id;

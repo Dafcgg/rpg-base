@@ -2,6 +2,9 @@
 
 Simulador de combate por consola en **Java 21** que reune cuatro entregas del programa ADSO en un solo proyecto:
 
+La auditoria, reproducciones de fallos, limites y veredicto estan en [AUDITORIA.md](AUDITORIA.md).
+El proyecto requiere Java 21: no se anuncia compatibilidad binaria con Java 17.
+
 - **Taller de Concurrencia (Unidades 4.1 y 4.2):** temporizador de turno, efectos DoT/HoT en hilos, torneo con semifinales en paralelo y auto-guardado en un hilo daemon.
 - **Taller de Persistencia en Archivos:** historial de combates en texto, guardado y carga de partida con serializacion segura.
 - **Unidad 5.2 (JDBC + MVC):** registro persistente de heroes en MySQL y conversion a entidades de combate.
@@ -31,7 +34,34 @@ java -cp out com.rpg.Main
 
 En IntelliJ IDEA basta con abrir la carpeta como proyecto Maven y ejecutar `Main`.
 
-### Suite de pruebas (`DryRunSuite`)
+La compilacion manual no descarga el driver JDBC. Para operaciones MySQL debes incluir
+`mysql-connector-j-8.4.0.jar` en el classpath de ejecucion, o ejecutar mediante Maven.
+
+### Pruebas automatizadas
+
+```
+mvn test
+```
+
+JUnit ejecuta las regresiones y lanza `DryRunSuite` en un directorio temporal aislado,
+sin tocar las partidas ni el historial del usuario. Para incluir MySQL real en PowerShell:
+
+```powershell
+$env:RPG_RUN_MYSQL_TESTS = 'true'
+mvn verify
+```
+
+La integracion necesita `config.txt` valido y permiso `CREATE TEMPORARY TABLES`.
+Usa una tabla temporal `heroes` que oculta la tabla permanente solo en su propia conexion.
+Comprueba CRUD, UNIQUE, datos invalidos y conexion cerrada sin detener el servidor.
+
+Para forzar una compilacion independiente conservando los resultados anteriores:
+
+```
+mvn -Drpg.build.directory=target/audit/verification verify
+```
+
+### Suite manual (`DryRunSuite`)
 
 La suite no usa JUnit: es un programa con `main`. Se ejecuta desde la **raiz del proyecto** (necesita encontrar `src/`):
 
@@ -200,7 +230,7 @@ com.rpg
 - [x] `serialVersionUID` en cada clase serializable y su funcion explicada (`INFORME.md` seccion 8.3).
 - [x] Campos `transient` (`hilosEfectos`, `vidaLock`) que vuelven con su valor por defecto y se recrean en `readObject`.
 - [x] Guardado con `ObjectOutputStream.writeObject(...)` en `.dat`.
-- [x] Carga con `ObjectInputStream.readObject()` y `ObjectInputFilter` (`com.rpg.**;java.base/*;!*`).
+- [x] Carga con `ObjectInputStream.readObject()`, lista exacta de clases y limites de bytes, objetos, profundidad y arrays.
 - [x] `NotSerializableException` provocada y resuelta (`DemoArchivos.demostrarNotSerializableException`, `INFORME.md` seccion 8.4).
 - [x] El ciclo `Personaje` - `Gremio` se serializa correctamente.
 - [x] Opcion "Cargar partida" en el menu.
@@ -216,7 +246,7 @@ com.rpg
 
 - [x] `AutoGuardadoDaemon` escribe a disco cada 30 s.
 - [x] La escritura y la lectura de los `.dat` estan protegidas con `synchronized` (un mismo candado en `GestorPartidas`; el historial `.txt` tiene el suyo).
-- [x] Al cerrar el juego el hilo daemon no deja un archivo a medio escribir (la escritura ocurre dentro del cerrojo).
+- [x] El guardado escribe un temporal, comprueba que puede cargarse y reemplaza el archivo con `ATOMIC_MOVE`; un cerrojo por si solo no protege ante la terminacion de la JVM.
 
 ## Investigacion obligatoria
 

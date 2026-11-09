@@ -2,6 +2,8 @@ package com.rpg.concurrency;
 
 import com.rpg.core.TurnoCallback;
 
+import java.util.Objects;
+
 /**
  * Administra el hilo de cuenta regresiva para el turno del jugador.
  *
@@ -14,21 +16,25 @@ import com.rpg.core.TurnoCallback;
  * }</pre>
  *
  * <h2>Thread safety</h2>
- * El campo {@code hiloActivo} se declara {@code volatile} para que la escritura
- * desde {@link #iniciarTemporizador} sea visible inmediatamente en {@link #cancelar},
- * que puede llamarse desde un hilo diferente.
+ * El mismo monitor protege inicio, cancelacion y generacion del callback, de modo
+ * que un temporizador sustituido no pueda notificar el vencimiento de otro turno.
  */
 public class GestorTurno {
 
     private final int segundosPorTurno;
 
-    /** Referencia volatil al hilo en curso; null si no hay temporizador activo. */
-    private volatile Thread hiloActivo;
+    /** Referencias protegidas por el monitor de este gestor. */
+    private Thread hiloActivo;
+    private Thread ultimoHilo;
+    private Object generacionActual;
 
     /**
      * @param segundosPorTurno duracion maxima de cada turno en segundos
      */
     public GestorTurno(int segundosPorTurno) {
+        if (segundosPorTurno <= 0) {
+            throw new IllegalArgumentException("El tiempo del turno debe ser positivo");
+        }
         this.segundosPorTurno = segundosPorTurno;
     }
 
@@ -38,12 +44,35 @@ public class GestorTurno {
      *
      * @param callback receptor de {@code onTiempoAgotado()} si el turno expira
      */
-    public void iniciarTemporizador(TurnoCallback callback) {
+    public synchronized void iniciarTemporizador(TurnoCallback callback) {
+        Objects.requireNonNull(callback, "callback");
         cancelar(); // asegura que no haya temporizador anterior pendiente
-        TemporizadorTurnoTask tarea = new TemporizadorTurnoTask(segundosPorTurno, callback);
-        Thread hilo = new Thread(tarea, "temporizador-turno");
+        Object generacion = new Object();
+        generacionActual = generacion;
+        TemporizadorTurnoTask tarea = new TemporizadorTurnoTask(segundosPorTurno, () -> {
+            // FIX: cancelar/iniciar y el callback son atomicos respecto de la misma generacion.
+            // Un temporizador viejo nunca expira la lectura de un turno nuevo.
+            synchronized (this) {
+                if (generacionActual == generacion && !Thread.currentThread().isInterrupted()) {
+                    callback.onTiempoAgotado();
+                }
+            }
+        });
+        Thread hilo = new Thread(() -> {
+            try {
+                tarea.run();
+            } finally {
+                synchronized (this) {
+                    if (generacionActual == generacion) {
+                        hiloActivo = null;
+                        generacionActual = null;
+                    }
+                }
+            }
+        }, "temporizador-turno");
         hilo.setDaemon(true); // no impide que la JVM cierre si el juego termina
         hiloActivo = hilo;
+        ultimoHilo = hilo;
 
         System.out.printf("[Turno] Tienes %d segundos para elegir una accion.%n", segundosPorTurno);
         System.out.printf("[Estado hilo] NEW -> %s%n", hilo.getState());
@@ -55,11 +84,12 @@ public class GestorTurno {
      * Interrumpe el temporizador activo (si existe).
      * Despues de esta llamada el hilo terminara limpiamente.
      */
-    public void cancelar() {
+    public synchronized void cancelar() {
+        generacionActual = null;
         Thread hilo = hiloActivo;
-        if (hilo != null && hilo.isAlive()) {
+        hiloActivo = null;
+        if (hilo != null) {
             hilo.interrupt();
-            hiloActivo = null;
         }
     }
 
@@ -68,8 +98,12 @@ public class GestorTurno {
      * Util en tests para evitar salidas entrelazadas.
      */
     public void esperarFin() {
-        Thread hilo = hiloActivo;
-        if (hilo != null) {
+        Thread hilo;
+        synchronized (this) {
+            // FIX: cancelar no pierde la referencia al hilo que aun debe terminar.
+            hilo = ultimoHilo;
+        }
+        if (hilo != null && hilo != Thread.currentThread()) {
             try {
                 hilo.join();
             } catch (InterruptedException e) {

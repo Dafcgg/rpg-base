@@ -287,13 +287,14 @@ public class DryRunSuite {
         // 2.2 Cancelacion limpia de EfectoContinuoTask mediante .interrupt()
         Guerrero objetivo = new Guerrero("Thor");
         EstadoEfecto veneno = new EstadoEfecto("VenenoTest", TipoEfecto.DANIO_CONTINUO, 5, 10);
-        EfectoContinuoTask tareaEfecto = new EfectoContinuoTask(objetivo, veneno);
-        Thread hiloEfecto = new Thread(tareaEfecto, "test-efecto");
-        hiloEfecto.start();
+        // FIX: probar una tarea registrada y realmente activa, no una tarea sin propietario.
+        objetivo.aplicarEfecto(veneno);
+        Thread hiloEfecto = Objects.requireNonNull(hiloPorNombre("efecto-VenenoTest-Thor"));
         Thread.sleep(1500); // dejar que corra al menos 1 tick
         hiloEfecto.interrupt();
         hiloEfecto.join(2000);
-        afirmo(!hiloEfecto.isAlive(),
+        afirmo(!hiloEfecto.isAlive() && objetivo.getVida() < objetivo.getVidaMaxima()
+                        && objetivo.getEfectos().isEmpty(),
                 "Cancelacion limpia de EfectoContinuoTask con interrupt()");
 
         // 2.3 Simulacion de condiciones de carrera en Personaje (concurrencia de vida y efectos)
@@ -444,17 +445,14 @@ public class DryRunSuite {
 
         // 6.8 EfectoContinuoTask responde a interrupt(): termina, conserva la bandera y limpia su estado
         Guerrero victima = new Guerrero("Victima");
-        EfectoContinuoTask tarea = new EfectoContinuoTask(victima, new EstadoEfecto("Lento", TipoEfecto.DANIO_CONTINUO, 1, 50));
-        final boolean[] banderaRestaurada = {false};
-        Thread t = new Thread(() -> {
-            tarea.run();
-            banderaRestaurada[0] = Thread.currentThread().isInterrupted();
-        });
-        t.start();
+        // FIX: interrumpir el hilo real durante la ejecucion del efecto.
+        victima.aplicarEfecto(new EstadoEfecto("Lento", TipoEfecto.DANIO_CONTINUO, 1, 50));
+        Thread t = Objects.requireNonNull(hiloPorNombre("efecto-Lento-Victima"));
         Thread.sleep(150);
         t.interrupt();
         t.join(3000);
-        afirmo(!t.isAlive() && banderaRestaurada[0], "EfectoContinuoTask sale limpio ante interrupt() y restaura la bandera");
+        afirmo(!t.isAlive() && t.isInterrupted() && victima.getEfectos().isEmpty(),
+                "EfectoContinuoTask sale limpio ante interrupt() y restaura la bandera");
 
         // 6.9 recibirDanioConLock (ReentrantLock + try-finally) sin condiciones de carrera
         Mago objetivo = new Mago("Yunque");

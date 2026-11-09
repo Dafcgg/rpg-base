@@ -2,6 +2,8 @@ package com.rpg.concurrency;
 
 import com.rpg.core.TurnoCallback;
 
+import java.util.Objects;
+
 /**
  * Tarea {@link Runnable} que implementa la cuenta regresiva de turno del jugador.
  *
@@ -34,7 +36,7 @@ public class TemporizadorTurnoTask implements Runnable {
             throw new IllegalArgumentException("El tiempo del turno debe ser positivo");
         }
         this.segundos = segundos;
-        this.callback = callback;
+        this.callback = Objects.requireNonNull(callback, "callback");
     }
 
     @Override

@@ -7,6 +7,7 @@ import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -49,18 +50,40 @@ public class RegistroCombate {
     private static final Consumer<String> LOG_CONSOLA = System.out::println;
 
     private final StringBuilder texto = new StringBuilder();
+    private static final int MAX_CARACTERES = 1_048_576;
     private Consumer<String> consumidorLog = LOG_CONSOLA;
+    private final String rutaHistorial;
+
+    public RegistroCombate() {
+        this(ARCHIVO_HISTORIAL_DEFECTO);
+    }
+
+    public RegistroCombate(String rutaHistorial) {
+        this.rutaHistorial = Objects.requireNonNull(rutaHistorial, "rutaHistorial");
+    }
 
     public synchronized void setConsumidorLog(Consumer<String> consumidorLog) {
         this.consumidorLog = Objects.requireNonNull(consumidorLog, "consumidorLog");
     }
 
-    public synchronized void agregar(String linea) {
-        consumidorLog.accept(linea);
-        texto.append(linea).append(System.lineSeparator());
+    public void agregar(String linea) {
+        Objects.requireNonNull(linea, "linea");
+        Consumer<String> salida;
+        synchronized (this) {
+            // FIX: una sesion larga no retiene un registro ilimitado en memoria.
+            String evento = linea.length() > MAX_CARACTERES
+                    ? linea.substring(linea.length() - MAX_CARACTERES) : linea;
+            texto.append(evento).append(System.lineSeparator());
+            if (texto.length() > MAX_CARACTERES) {
+                texto.delete(0, texto.length() - MAX_CARACTERES);
+            }
+            salida = consumidorLog;
+        }
+        // FIX: no ejecutar callbacks externos mientras se retiene el monitor del registro.
+        salida.accept(linea);
     }
 
-    public synchronized void agregar(String formato, Object... argumentos) {
+    public void agregar(String formato, Object... argumentos) {
         agregar(String.format(formato, argumentos));
     }
 
@@ -77,7 +100,7 @@ public class RegistroCombate {
      * en modo append usando {@link BufferedWriter} y {@link FileWriter}.
      */
     public void volcarAArchivo() {
-        volcarAArchivo(ARCHIVO_HISTORIAL_DEFECTO);
+        volcarAArchivo(rutaHistorial);
     }
 
     /**
@@ -97,7 +120,7 @@ public class RegistroCombate {
         }
         File archivo = new File(rutaArchivo);
         synchronized (LOCK_ARCHIVO) {
-            try (BufferedWriter bw = new BufferedWriter(new FileWriter(archivo, true))) {
+            try (BufferedWriter bw = new BufferedWriter(new FileWriter(archivo, StandardCharsets.UTF_8, true))) {
                 bw.write(contenido);
                 bw.newLine();
                 System.out.println("[RegistroCombate] Historial volcado exitosamente a: " + archivo.getAbsolutePath());
@@ -125,7 +148,7 @@ public class RegistroCombate {
         File archivo = new File(rutaArchivo);
         System.out.println("\n=== HISTORIAL DE COMBATES (" + archivo.getName() + ") ===");
         synchronized (LOCK_ARCHIVO) {
-            try (BufferedReader br = new BufferedReader(new FileReader(archivo))) {
+            try (BufferedReader br = new BufferedReader(new FileReader(archivo, StandardCharsets.UTF_8))) {
                 String linea;
                 boolean vacio = true;
                 while ((linea = br.readLine()) != null) {

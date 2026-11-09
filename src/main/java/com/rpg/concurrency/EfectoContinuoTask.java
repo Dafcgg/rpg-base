@@ -3,6 +3,8 @@ package com.rpg.concurrency;
 import com.rpg.entities.EstadoEfecto;
 import com.rpg.entities.Personaje;
 
+import java.util.Objects;
+
 /**
  * Tarea {@link Runnable} que aplica el tick de un {@link EstadoEfecto} de forma
  * continua y periodica sobre un {@link Personaje}, reemplazando el procesamiento
@@ -40,8 +42,8 @@ public class EfectoContinuoTask implements Runnable {
      * @param efecto   efecto a aplicar (se usa una copia interna para evitar mutacion externa)
      */
     public EfectoContinuoTask(Personaje objetivo, EstadoEfecto efecto) {
-        this.objetivo = objetivo;
-        this.efecto = efecto.copia();
+        this.objetivo = Objects.requireNonNull(objetivo, "objetivo");
+        this.efecto = Objects.requireNonNull(efecto, "efecto").copia();
     }
 
     @Override
@@ -59,8 +61,11 @@ public class EfectoContinuoTask implements Runnable {
                     break;
                 }
 
-                aplicarTick();
-                efecto.consumirTurno();
+                // FIX: validar registro, aplicar y consumir bajo el monitor del objetivo.
+                // Un hilo cancelado esperando el monitor no puede dar un ultimo golpe tardio.
+                if (!objetivo.aplicarTickEfecto(efecto)) {
+                    break;
+                }
 
                 if (efecto.haTerminado()) {
                     motivo = "termino";
@@ -88,17 +93,4 @@ public class EfectoContinuoTask implements Runnable {
         }
     }
 
-    /** Aplica un tick de dano o curacion segun el tipo de efecto. */
-    private void aplicarTick() {
-        int valor = efecto.getValorPorTick();
-        if (efecto.esDanio()) {
-            objetivo.recibirDanio(valor);
-            System.out.printf("[EfectoContinuo] %s sufre %d de danio por '%s' (vida: %d)%n",
-                    objetivo.getNombre(), valor, efecto.getNombre(), objetivo.getVida());
-        } else {
-            int curado = objetivo.curar(valor);
-            System.out.printf("[EfectoContinuo] %s recupera %d de vida por '%s' (vida: %d)%n",
-                    objetivo.getNombre(), curado, efecto.getNombre(), objetivo.getVida());
-        }
-    }
 }

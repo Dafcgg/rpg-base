@@ -13,6 +13,11 @@ public final class FormatoCombate {
 
     /** Barra de vida tipo [#####-----]. */
     public static String barraVida(int vida, int vidaMaxima) {
+        // FIX: rechazar un denominador invalido; acotar entradas antes de dibujar.
+        if (vidaMaxima <= 0) {
+            throw new IllegalArgumentException("La vida maxima debe ser positiva");
+        }
+        vida = Math.max(0, Math.min(vida, vidaMaxima));
         int llenas = (int) Math.round((double) vida / vidaMaxima * ANCHO_BARRA);
         if (vida > 0) {
             llenas = Math.max(llenas, 1);

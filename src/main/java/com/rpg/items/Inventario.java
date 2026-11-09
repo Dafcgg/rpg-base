@@ -7,6 +7,7 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Contenedor generico con capacidad limitada: {@code Inventario<Pocion>} solo acepta pociones.
@@ -30,31 +31,45 @@ public class Inventario<T> implements Iterable<T>, Serializable {
         this.capacidad = capacidad;
     }
 
-    public void agregar(T elemento) throws CapacidadExcedidaException {
+    public synchronized void agregar(T elemento) throws CapacidadExcedidaException {
+        Objects.requireNonNull(elemento, "elemento"); // FIX: no aceptar huecos que rompan el menu de pociones.
         if (elementos.size() >= capacidad) {
             throw new CapacidadExcedidaException(capacidad);
         }
         elementos.add(elemento);
     }
 
-    public T obtener(int indice) {
+    public synchronized T obtener(int indice) {
         return elementos.get(indice);
     }
 
-    public T quitar(int indice) {
+    public synchronized T quitar(int indice) {
         return elementos.remove(indice);
     }
 
-    public int tamanio() {
+    public synchronized int tamanio() {
         return elementos.size();
     }
 
-    public boolean estaVacio() {
+    public synchronized boolean estaVacio() {
         return elementos.isEmpty();
     }
 
     @Override
-    public Iterator<T> iterator() {
-        return elementos.iterator();
+    public synchronized Iterator<T> iterator() {
+        return List.copyOf(elementos).iterator(); // FIX: iterar una instantanea, sin exponer remove ni provocar CME.
+    }
+
+    @Serial
+    private synchronized void writeObject(java.io.ObjectOutputStream out) throws java.io.IOException {
+        out.defaultWriteObject();
+    }
+
+    @Serial
+    private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        if (capacidad <= 0 || elementos == null || elementos.size() > capacidad || elementos.contains(null)) {
+            throw new java.io.InvalidObjectException("Inventario guardado invalido"); // FIX
+        }
     }
 }

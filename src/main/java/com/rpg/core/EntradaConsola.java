@@ -6,7 +6,8 @@ import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.util.Objects;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Entrada de teclado que se puede abandonar por tiempo (lectura con limite real).
@@ -42,52 +43,75 @@ public final class EntradaConsola extends InputStream {
     /** Marca de "se agoto el tiempo". Se compara por identidad. */
     private static final byte[] TIEMPO = new byte[0];
 
-    private final BlockingQueue<byte[]> cola = new LinkedBlockingQueue<>();
+    // FIX: entrada hostil o pegado masivo no pueden hacer crecer la memoria sin limite.
+    private static final int MAX_BYTES_LINEA = 4096;
+    private final BlockingQueue<byte[]> cola = new ArrayBlockingQueue<>(128);
+    private final AtomicBoolean cerrada = new AtomicBoolean();
+    private final AtomicBoolean expirada = new AtomicBoolean();
+    private final InputStream origen;
+    private final Thread bomba;
 
     /** Linea en curso de entrega al Scanner (protegida por el monitor de este objeto). */
     private byte[] actual;
     private int posicion;
 
     public EntradaConsola(InputStream origen) {
-        BlockingQueue<byte[]> destino = cola;
-        Thread bomba = new Thread(() -> bombear(origen, destino), "entrada-consola");
+        this.origen = Objects.requireNonNull(origen, "origen");
+        bomba = new Thread(this::bombear, "entrada-consola");
         bomba.setDaemon(true); // no impide que la JVM termine
         bomba.start();
     }
 
     /** Lee el flujo original y publica una linea completa por elemento de la cola. */
-    private static void bombear(InputStream origen, BlockingQueue<byte[]> destino) {
+    private void bombear() {
         ByteArrayOutputStream linea = new ByteArrayOutputStream();
         try {
             int b;
-            while ((b = origen.read()) != -1) {
+            while (!cerrada.get() && (b = origen.read()) != -1) {
+                if (linea.size() >= MAX_BYTES_LINEA) {
+                    throw new IOException("Linea de consola demasiado larga (maximo 4096 bytes)");
+                }
                 linea.write(b);
                 if (b == '\n') {
-                    destino.offer(linea.toByteArray());
+                    cola.put(linea.toByteArray());
                     linea.reset();
                 }
             }
+            if (linea.size() > 0 && !cerrada.get()) {
+                cola.put(linea.toByteArray());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         } catch (IOException e) {
-            System.err.println("[EntradaConsola] Error de lectura: " + e.getMessage());
+            if (!cerrada.get()) {
+                System.err.println("[EntradaConsola] Error de lectura: " + e.getMessage());
+            }
+        } finally {
+            if (!cerrada.get()) {
+                try {
+                    cola.put(FIN);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            }
         }
-        if (linea.size() > 0) {
-            destino.offer(linea.toByteArray()); // ultima linea sin salto de linea
-        }
-        destino.offer(FIN);
     }
 
     /** Descarta una marca de tiempo agotado que haya quedado de un turno anterior. */
     public void armar() {
         cola.removeIf(item -> item == TIEMPO);
+        expirada.set(false);
     }
 
     /** Fin de la espera: elimina marcas de tiempo que hayan llegado justo despues de responder. */
     public void desarmar() {
         cola.removeIf(item -> item == TIEMPO);
+        expirada.set(false);
     }
 
     /** Despierta a quien espera en {@link #esperarLinea()}. Seguro para llamarse desde otro hilo. */
     public void expirar() {
+        expirada.set(true);
         cola.offer(TIEMPO);
     }
 
@@ -98,11 +122,22 @@ public final class EntradaConsola extends InputStream {
      * @throws InterruptedException si el hilo que espera es interrumpido
      */
     public synchronized boolean esperarLinea() throws InterruptedException {
+        // FIX: el timeout sigue vigente incluso si la cola estaba llena al publicarlo.
+        if (expirada.get()) {
+            return false;
+        }
+        if (cerrada.get()) {
+            actual = FIN;
+        }
         if (actual != null) {
             return true;
         }
         byte[] item = cola.take();
-        if (item == TIEMPO) {
+        if (item == TIEMPO || expirada.get()) {
+            if (item != TIEMPO) {
+                actual = item;
+                posicion = 0;
+            }
             return false;
         }
         actual = item;
@@ -115,6 +150,9 @@ public final class EntradaConsola extends InputStream {
         Objects.checkFromIndexSize(desde, largo, destino.length);
         if (largo == 0) {
             return 0;
+        }
+        if (cerrada.get()) {
+            return -1;
         }
         try {
             while (actual == null) {
@@ -145,5 +183,19 @@ public final class EntradaConsola extends InputStream {
         byte[] uno = new byte[1];
         int n = read(uno, 0, 1);
         return n == -1 ? -1 : (uno[0] & 0xFF);
+    }
+
+    @Override
+    public void close() throws IOException {
+        // FIX: despertar consumidores y productores bloqueados al cerrar el Scanner.
+        if (cerrada.compareAndSet(false, true)) {
+            bomba.interrupt();
+            cola.clear();
+            cola.offer(FIN);
+            // System.in pertenece al proceso; cerrarlo desde otro hilo puede bloquear.
+            if (origen != System.in) {
+                origen.close();
+            }
+        }
     }
 }

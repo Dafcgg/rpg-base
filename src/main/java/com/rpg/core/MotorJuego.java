@@ -17,6 +17,8 @@ import com.rpg.items.Pocion;
 import com.rpg.persistencia.GestorPartidas;
 
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.OptionalInt;
 import java.util.Random;
 import java.util.function.Supplier;
@@ -27,7 +29,7 @@ import java.util.stream.Stream;
  * Coordina el flujo del juego: crear heroe, combatir, torneo, bestiario,
  * temporizador de turnos concurrente y persistencia en disco (manual y autoguardado en segundo plano).
  */
-public class MotorJuego {
+public class MotorJuego implements AutoCloseable {
 
     private static final String NOMBRE_GREMIO = "Guardianes del Alba";
     private static final int CURACION_POCION_VIDA = 30;
@@ -35,23 +37,36 @@ public class MotorJuego {
     private static final long INTERVALO_AUTOGUARDADO_MS = 30_000L;
 
     private final Consola consola;
-    private final RegistroCombate registro = new RegistroCombate();
-    private final Arena arena = new Arena(registro, new Random());
+    private final RegistroCombate registro;
+    private final Arena arena;
     private final Bestiario bestiario = new Bestiario();
     private final Supplier<Enemigo> proveedorEnemigoAleatorio;
     private PerfilJugador perfil = new PerfilJugador();
     private final Gremio gremio = new Gremio(NOMBRE_GREMIO);
-    private final TorneoManager torneo = new TorneoManager(arena, registro);
+    private final TorneoManager torneo;
 
     // Modulos de Concurrencia y Persistencia
-    private final GestorTurno gestorTurno = new GestorTurno(SEGUNDOS_TURNO);
-    private final GestorPartidas gestorPartidas = new GestorPartidas();
+    private final GestorTurno gestorTurno;
+    private final GestorPartidas gestorPartidas;
     private final AutoGuardadoDaemon daemonAutoGuardado;
 
     private String ultimoGuardado = "";
 
     public MotorJuego(Consola consola) {
-        this.consola = consola;
+        this(consola, SEGUNDOS_TURNO, new GestorPartidas());
+    }
+
+    MotorJuego(Consola consola, int segundosTurno, GestorPartidas gestorPartidas) {
+        this(consola, segundosTurno, gestorPartidas, new RegistroCombate());
+    }
+
+    MotorJuego(Consola consola, int segundosTurno, GestorPartidas gestorPartidas, RegistroCombate registro) {
+        this.consola = Objects.requireNonNull(consola, "consola");
+        this.registro = Objects.requireNonNull(registro, "registro");
+        this.arena = new Arena(registro, new Random());
+        this.torneo = new TorneoManager(arena, registro);
+        this.gestorTurno = new GestorTurno(segundosTurno);
+        this.gestorPartidas = Objects.requireNonNull(gestorPartidas, "gestorPartidas");
         this.proveedorEnemigoAleatorio = bestiario.proveedorEnemigoAleatorio(new Random());
         this.gestorPartidas.setPerfilActual(this.perfil);
 
@@ -71,6 +86,9 @@ public class MotorJuego {
         if (jugador == null) {
             throw new IllegalArgumentException("El personaje no puede ser null.");
         }
+        if (!jugador.estaVivo()) {
+            throw new IllegalArgumentException("Un personaje derrotado no puede iniciar un combate.");
+        }
         entregarKitInicial(jugador);
         jugador.unirseAGremio(gremio);
         System.out.printf("%s se une al gremio %s (%d miembros).%n",
@@ -80,10 +98,22 @@ public class MotorJuego {
 
     private void ejecutarCombate(Personaje jugador) {
         registro.limpiar();
-        Enemigo enemigo = elegirEnemigo();
-        registro.agregar("%n=== %s vs %s ===", jugador.getNombre(), enemigo.getNombre());
-
-        boolean huyo = combatir(jugador, enemigo);
+        Enemigo enemigo = null;
+        boolean huyo;
+        try {
+            enemigo = elegirEnemigo();
+            registro.agregar("%n=== %s vs %s ===", jugador.getNombre(), enemigo.getNombre());
+            huyo = combatir(jugador, enemigo);
+        } finally {
+            // FIX: EOF, excepciones y huida tambien deben cancelar relojes y efectos.
+            gestorTurno.cancelar();
+            jugador.detenerEfectos();
+            if (enemigo != null) {
+                enemigo.detenerEfectos();
+            }
+            // FIX: el gremio representa combatientes activos; no retener cada heroe de la sesion.
+            jugador.abandonarGremio();
+        }
 
         cerrarCombate(jugador, enemigo, huyo);
         guardarProgreso();
@@ -118,8 +148,8 @@ public class MotorJuego {
      * Guarda la partida actual tanto en memoria como en archivo binario serializado.
      */
     public void guardarPartidaEnDisco() {
+        // FIX: guardarProgreso ya escribe; no duplicar la E/S ni mensajes de exito.
         guardarProgreso();
-        gestorPartidas.guardarPerfil(perfil);
     }
 
     /**
@@ -217,6 +247,9 @@ public class MotorJuego {
     private boolean combatir(Personaje jugador, Enemigo enemigo) {
         int ronda = 1;
         while (jugador.estaVivo() && enemigo.estaVivo()) {
+            if (Thread.currentThread().isInterrupted()) {
+                throw new NoSuchElementException("Combate cancelado por interrupcion");
+            }
             registro.agregar("%n-- Ronda %d --", ronda);
             if (arena.iniciarTurno(jugador) && turnoJugador(jugador, enemigo)) {
                 return true;
@@ -228,53 +261,54 @@ public class MotorJuego {
     }
 
     private boolean turnoJugador(Personaje jugador, Enemigo enemigo) {
-        boolean turnoGastado;
-        do {
-            registro.agregar(FormatoCombate.resumen(jugador));
-            registro.agregar(FormatoCombate.resumen(enemigo));
-            Accion accion = pedirAccion();
-            if (accion == null) {
-                // El temporizador expiro: el turno se pierde por inaccion
-                registro.agregar("%s tardo demasiado tiempo en reaccionar y pierde el turno.", jugador.getNombre());
-                return false;
-            }
-            if (accion == Accion.HUIR) {
-                return true;
-            }
-            turnoGastado = switch (accion) {
-                case ATACAR -> {
-                    arena.atacar(jugador, enemigo);
-                    yield true;
+        // FIX: un solo plazo cubre estado, reintentos y seleccion de pociones.
+        consola.prepararEsperaConLimite();
+        gestorTurno.iniciarTemporizador(consola::expirarEspera);
+        try {
+            boolean turnoGastado;
+            do {
+                registro.agregar(FormatoCombate.resumen(jugador));
+                registro.agregar(FormatoCombate.resumen(enemigo));
+                Accion accion = pedirAccion();
+                if (!jugador.estaVivo() || !enemigo.estaVivo()) {
+                    return false;
                 }
-                case ESPECIAL -> arena.intentarEspecial(jugador, enemigo);
-                case POCION -> usarPocion(jugador);
-                default -> {
-                    mostrarEstado(jugador);
-                    yield false;
+                if (accion == null) {
+                    registro.agregar("%s tardo demasiado tiempo en reaccionar y pierde el turno.", jugador.getNombre());
+                    return false;
                 }
-            };
-        } while (!turnoGastado && enemigo.estaVivo());
-        return false;
+                if (accion == Accion.HUIR) {
+                    return true;
+                }
+                turnoGastado = switch (accion) {
+                    case ATACAR -> {
+                        arena.atacar(jugador, enemigo);
+                        yield true;
+                    }
+                    case ESPECIAL -> arena.intentarEspecial(jugador, enemigo);
+                    case POCION -> usarPocion(jugador);
+                    default -> {
+                        mostrarEstado(jugador);
+                        yield false;
+                    }
+                };
+            } while (!turnoGastado && jugador.estaVivo() && enemigo.estaVivo());
+            return false;
+        } finally {
+            gestorTurno.cancelar();
+            consola.finalizarEsperaConLimite();
+        }
     }
 
     /**
-     * Solicita la accion del jugador integrando un temporizador en hilo concurrente.
-     * Si el jugador ingresa su opcion a tiempo, el temporizador se cancela con interrupt().
-     * Si el tiempo expira, la bandera se marca y el jugador pierde el turno.
+     * Solicita una accion bajo el plazo compartido que administra turnoJugador.
+     * Ver estado o entrar al inventario no reinicia ese plazo.
      *
      * @return La {@link Accion} seleccionada, o {@code null} si el tiempo se agoto.
      */
     private Accion pedirAccion() {
-        // El temporizador despierta la lectura de consola: no hace falta pulsar Enter tarde.
-        TurnoCallback callback = consola::expirarEspera;
-
-        gestorTurno.iniciarTemporizador(callback);
-
         System.out.println("1. Atacar  2. Habilidad especial  3. Usar pocion  4. Ver estado  0. Huir");
         OptionalInt opcion = consola.leerEnteroConLimite("Accion: ", 0, 4);
-
-        // Respondio a tiempo (o expiro): en ambos casos el hilo del temporizador ya no hace falta
-        gestorTurno.cancelar();
 
         if (opcion.isEmpty()) {
             return null; // tiempo agotado: el turno se pierde
@@ -299,7 +333,11 @@ public class MotorJuego {
         for (Pocion pocion : inventario) {
             System.out.printf("  %d. %s%n", numero++, pocion.getNombre());
         }
-        int eleccion = consola.leerEntero("Pocion (0 = cancelar): ", 0, inventario.tamanio());
+        OptionalInt seleccion = consola.leerEnteroConLimite("Pocion (0 = cancelar): ", 0, inventario.tamanio());
+        if (seleccion.isEmpty() || !jugador.estaVivo()) {
+            return false;
+        }
+        int eleccion = seleccion.getAsInt();
         if (eleccion == 0) {
             return false;
         }
@@ -423,6 +461,18 @@ public class MotorJuego {
 
     public PerfilJugador getPerfil() {
         return perfil;
+    }
+
+    @Override
+    public void close() {
+        // FIX: un daemon deja de ser necesario al salir de la vista, no solo al morir la JVM.
+        gestorTurno.cancelar();
+        daemonAutoGuardado.interrupt();
+        try {
+            daemonAutoGuardado.join(1000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
 }

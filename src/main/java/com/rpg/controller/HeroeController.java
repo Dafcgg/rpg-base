@@ -3,6 +3,7 @@ package com.rpg.controller;
 import com.rpg.core.Consola;
 import com.rpg.core.MotorJuego;
 import com.rpg.dao.HeroeDAO;
+import com.rpg.dao.PersistenciaException;
 import com.rpg.entities.Guerrero;
 import com.rpg.entities.Mago;
 import com.rpg.entities.Personaje;
@@ -17,7 +18,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /** Validates hero operations and coordinates the view, DAO, and game domain. */
-public class HeroeController {
+public class HeroeController implements AutoCloseable {
 
     private static final String MENSAJE_NO_EXISTE = "no existe un heroe con ese id";
 
@@ -90,6 +91,9 @@ public class HeroeController {
             }
             System.out.printf("Heroe guardado con id %d.%n", heroe.getId());
             return true;
+        } catch (PersistenciaException e) {
+            informarError(e);
+            return false;
         } catch (IllegalArgumentException e) {
             System.out.println(e.getMessage());
             return false;
@@ -97,11 +101,17 @@ public class HeroeController {
     }
 
     public List<Heroe> listar() {
-        List<Heroe> heroes = heroeDAO.listar();
-        if (heroes.isEmpty()) {
-            System.out.println("No hay heroes registrados.");
+        try {
+            List<Heroe> heroes = heroeDAO.listar();
+            if (heroes.isEmpty()) {
+                System.out.println("No hay heroes registrados.");
+            }
+            return heroes;
+        } catch (PersistenciaException e) {
+            // FIX: Failed queries must not announce that the database is empty.
+            informarError(e);
+            return List.of();
         }
-        return heroes;
     }
 
     public List<Heroe> buscarPorTipo(String tipo) {
@@ -109,11 +119,16 @@ public class HeroeController {
             System.out.println("Tipo invalido. Use guerrero o mago.");
             return List.of();
         }
-        List<Heroe> heroes = heroeDAO.buscarPorTipo(tipo.trim().toLowerCase(Locale.ROOT));
-        if (heroes.isEmpty()) {
-            System.out.println("No hay heroes de ese tipo.");
+        try {
+            List<Heroe> heroes = heroeDAO.buscarPorTipo(tipo.trim().toLowerCase(Locale.ROOT));
+            if (heroes.isEmpty()) {
+                System.out.println("No hay heroes de ese tipo.");
+            }
+            return heroes;
+        } catch (PersistenciaException e) {
+            informarError(e);
+            return List.of();
         }
-        return heroes;
     }
 
     public Heroe buscarPorId(int id) {
@@ -121,11 +136,16 @@ public class HeroeController {
             System.out.println("El id debe ser mayor que cero.");
             return null;
         }
-        Heroe heroe = heroeDAO.buscarPorId(id);
-        if (heroe == null) {
-            System.out.println(MENSAJE_NO_EXISTE);
+        try {
+            Heroe heroe = heroeDAO.buscarPorId(id);
+            if (heroe == null) {
+                System.out.println(MENSAJE_NO_EXISTE);
+            }
+            return heroe;
+        } catch (PersistenciaException e) {
+            informarError(e);
+            return null;
         }
-        return heroe;
     }
 
     public void cargarYCombatir(int id) {
@@ -152,7 +172,13 @@ public class HeroeController {
             System.out.println("El nivel debe ser al menos 1.");
             return HeroeDAO.ERROR_BD;
         }
-        int filas = heroeDAO.actualizarNivel(id, nivel);
+        int filas;
+        try {
+            filas = heroeDAO.actualizarNivel(id, nivel);
+        } catch (PersistenciaException e) {
+            informarError(e);
+            return HeroeDAO.ERROR_BD;
+        }
         if (filas == 0) {
             System.out.println(MENSAJE_NO_EXISTE);
         } else if (filas > 0) {
@@ -168,7 +194,13 @@ public class HeroeController {
             System.out.println("El id debe ser mayor que cero.");
             return HeroeDAO.ERROR_BD;
         }
-        int filas = heroeDAO.eliminar(id);
+        int filas;
+        try {
+            filas = heroeDAO.eliminar(id);
+        } catch (PersistenciaException e) {
+            informarError(e);
+            return HeroeDAO.ERROR_BD;
+        }
         if (filas == 0) {
             System.out.println(MENSAJE_NO_EXISTE);
         } else if (filas > 0) {
@@ -202,7 +234,7 @@ public class HeroeController {
 
     /**
      * Busca multiples heroes a partir de un arreglo nativo de identificadores usando Arrays.stream().
-     * Delega la consulta batch al DAO para resolver la vulnerabilidad N+1 y procesa el resultado con Streams.
+     * Delega consultas por lotes al DAO y procesa el resultado sin una consulta por cada ID.
      */
     public List<Heroe> buscarPorIds(int[] ids) {
         if (ids == null || ids.length == 0) {
@@ -215,10 +247,15 @@ public class HeroeController {
         if (idsValidos.length == 0) {
             return List.of();
         }
-        List<Heroe> obtenidos = heroeDAO.buscarPorVariosIds(idsValidos);
-        return obtenidos.stream()
-                .filter(Objects::nonNull)
-                .collect(Collectors.toUnmodifiableList());
+        try {
+            List<Heroe> obtenidos = heroeDAO.buscarPorVariosIds(idsValidos);
+            return obtenidos.stream()
+                    .filter(Objects::nonNull)
+                    .collect(Collectors.toUnmodifiableList());
+        } catch (PersistenciaException e) {
+            informarError(e);
+            return List.of();
+        }
     }
 
     /**
@@ -230,7 +267,6 @@ public class HeroeController {
         }
         return heroes.stream()
                 .filter(Objects::nonNull)
-                .peek(h -> System.out.println("[Debug-HeroeController] Mapeando heroe: " + h.getNombre()))
                 .map(this::convertirAEntity)
                 .collect(Collectors.toList());
     }
@@ -241,5 +277,23 @@ public class HeroeController {
         }
         String normalizado = tipo.trim().toLowerCase(Locale.ROOT);
         return TIPOS_VALIDOS.stream().anyMatch(normalizado::equals);
+    }
+
+    private static void informarError(PersistenciaException e) {
+        // FIX: Expose actionable status without leaking JDBC URLs, SQL text or credentials.
+        switch (e.getMotivo()) {
+            case DUPLICADO -> System.out.println("Ya existe un heroe con ese nombre.");
+            case CONFIGURACION -> System.out.println("Configuracion de MySQL invalida. Revisa config.txt.");
+            case CONEXION -> System.out.println("MySQL no esta disponible. Reintenta cuando se restablezca la conexion.");
+            case OPERACION -> System.out.println("Fallo la operacion de BD. Verifica los datos antes de reintentar.");
+        }
+    }
+
+    @Override
+    public void close() {
+        // FIX: Stop the game autosave worker when the hero registry exits.
+        if (motorJuego != null) {
+            motorJuego.close();
+        }
     }
 }

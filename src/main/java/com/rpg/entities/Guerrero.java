@@ -28,6 +28,7 @@ public final class Guerrero extends Personaje implements Serializable {
 
     public Guerrero(String nombre, int fuerzaEscudo) {
         super(nombre, TipoPersonaje.GUERRERO, VIDA, ATAQUE, DEFENSA);
+        if (fuerzaEscudo < 0) throw new IllegalArgumentException("El escudo no puede ser negativo"); // FIX
         this.fuerzaEscudo = fuerzaEscudo;
         aprenderHabilidad(NOMBRE_ESPECIAL);
         equiparArma(new Arma("Espada de Hierro", 6, RaridadItem.COMUN));
@@ -35,19 +36,33 @@ public final class Guerrero extends Personaje implements Serializable {
 
     @Override
     public int getDefensa() {
-        return super.getDefensa() + fuerzaEscudo;
+        return acotarEstadistica((double) super.getDefensa() + fuerzaEscudo); // FIX: evitar overflow.
     }
 
     /** Golpe Brutal: pega el doble a cambio de sacrificar vida propia. */
     @Override
     public String realizarAtaqueEspecial(Personaje objetivo) {
-        if (getVida() <= COSTO_VIDA_ESPECIAL) {
-            throw new VidaInsuficienteException(getNombre(), COSTO_VIDA_ESPECIAL, getVida());
+        java.util.Objects.requireNonNull(objetivo, "objetivo");
+        if (objetivo == this) throw new IllegalArgumentException("Objetivo invalido");
+        if (!objetivo.estaVivo()) return objetivo.getNombre() + " ya esta derrotado"; // FIX: posible muerte por DoT.
+        synchronized (this) {
+            // FIX: comprobacion y consumo deben ser atomicos frente a los efectos de dano.
+            if (getVida() <= COSTO_VIDA_ESPECIAL) {
+                throw new VidaInsuficienteException(getNombre(), COSTO_VIDA_ESPECIAL, getVida());
+            }
+            recibirDanio(COSTO_VIDA_ESPECIAL);
         }
-        recibirDanio(COSTO_VIDA_ESPECIAL);
         int vidaAntes = objetivo.getVida();
-        objetivo.defender(calcularDanio() * MULTIPLICADOR_ESPECIAL);
+        objetivo.defender(acotarEstadistica((double) calcularDanio() * MULTIPLICADOR_ESPECIAL)); // FIX
         return String.format("%s usa %s (-%d de vida propia) y causa %d de dano a %s",
                 getNombre(), NOMBRE_ESPECIAL, COSTO_VIDA_ESPECIAL, vidaAntes - objetivo.getVida(), objetivo.getNombre());
+    }
+
+    @Serial
+    private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        if (fuerzaEscudo < 0 || getTipo() != TipoPersonaje.GUERRERO) {
+            throw new java.io.InvalidObjectException("Guerrero invalido"); // FIX: validar datos persistidos.
+        }
     }
 }

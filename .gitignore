@@ -10,3 +10,4 @@ target/
 *.dat
 partidas/
 config.txt
+historial_combates.txt

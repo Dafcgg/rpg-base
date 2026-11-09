@@ -9,6 +9,9 @@ import com.rpg.items.Pocion;
 
 import java.io.Serial;
 import java.io.Serializable;
+import java.io.InvalidObjectException;
+import java.io.ObjectOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -18,6 +21,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -88,7 +92,7 @@ public abstract class Personaje implements ICombatiente, Serializable {
     private EstadoPersonaje estado = EstadoPersonaje.VIVO;
 
     private Arma arma;                  // asociacion 0..1
-    private Gremio gremio;              // asociacion bidireccional 0..1
+    private volatile Gremio gremio;     // FIX: visibilidad de los cambios de membresia entre hilos.
     private final Inventario<Pocion> inventario = new Inventario<>(CAPACIDAD_INVENTARIO); // composicion
     private final HashSet<String> habilidades = new HashSet<>();
     // LinkedHashMap es Serializable; EstadoEfecto tambien lo es.
@@ -113,8 +117,8 @@ public abstract class Personaje implements ICombatiente, Serializable {
         if (vidaMaxima <= 0 || ataqueBase < 0 || defensaBase < 0) {
             throw new IllegalArgumentException("Estadisticas invalidas para " + nombre);
         }
-        this.nombre = nombre;
-        this.tipo = tipo;
+        this.nombre = nombre.trim();
+        this.tipo = Objects.requireNonNull(tipo, "tipo"); // FIX: impedir personajes sin reglas de clase.
         this.vidaMaxima = vidaMaxima;
         this.vida = vidaMaxima;
         this.ataqueBase = ataqueBase;
@@ -123,7 +127,7 @@ public abstract class Personaje implements ICombatiente, Serializable {
     }
 
     private static void validarNombre(String nombre) {
-        if (nombre == null || nombre.isBlank() || !nombre.matches(PATRON_NOMBRE)) {
+        if (nombre == null || nombre.isBlank() || nombre.length() > 100 || !nombre.matches(PATRON_NOMBRE)) {
             throw new IllegalArgumentException("El nombre solo puede contener letras ASCII, numeros y espacios");
         }
     }
@@ -139,9 +143,33 @@ public abstract class Personaje implements ICombatiente, Serializable {
         // Reinicializar el mapa de hilos (los hilos no se persisten)
         hilosEfectos = new HashMap<>();
         vidaLock = new ReentrantLock();
-        if (nivel < 1) {
+        if (nivel == 0) {
             nivel = 1; // partidas guardadas antes de existir el atributo nivel
         }
+        // FIX: la deserializacion evita el constructor; validar tambien los datos guardados.
+        try {
+            validarNombre(nombre);
+            if (tipo == null || vidaMaxima <= 0 || vida < 0 || vida > vidaMaxima
+                    || ataqueBase < 0 || defensaBase < 0 || nivel < 1 || estado == null
+                    || (vida == 0) != (estado == EstadoPersonaje.MUERTO)
+                    || inventario == null || habilidades == null || efectos == null
+                    || habilidades.stream().anyMatch(h -> h == null || h.isBlank())
+                    || efectos.entrySet().stream().anyMatch(e -> e.getKey() == null || e.getValue() == null
+                        || !e.getKey().equals(e.getValue().getNombre()))) {
+                throw new IllegalArgumentException("Estado de personaje invalido");
+            }
+            for (Object item : inventario) {
+                if (!(item instanceof Pocion)) throw new IllegalArgumentException("Objeto ajeno al inventario de pociones");
+            }
+        } catch (RuntimeException e) {
+            throw new InvalidObjectException(e.getMessage());
+        }
+    }
+
+    @Serial
+    private synchronized void writeObject(ObjectOutputStream out) throws IOException {
+        // FIX: vida, estado y efectos se guardan bajo el mismo monitor que sus mutaciones.
+        out.defaultWriteObject();
     }
 
     // ---- combate
@@ -156,16 +184,23 @@ public abstract class Personaje implements ICombatiente, Serializable {
     public void alIniciarTurno() {
     }
 
-    public int calcularDanio() {
-        double bruto = ataqueBase + (getNivel() - 1) + tipo.getBonificadorAtaque();
+    public synchronized int calcularDanio() {
+        double bruto = (double) ataqueBase + (nivel - 1L) + tipo.getBonificadorAtaque();
         if (arma != null) {
             bruto += arma.getDanioEfectivo();
         }
-        return (int) Math.round(bruto);
+        return acotarEstadistica(bruto); // FIX: saturar antes del cast, sin overflow de int/long.
+    }
+
+    protected static int acotarEstadistica(double valor) {
+        return (int) Math.max(0, Math.min(Integer.MAX_VALUE, Math.round(valor)));
     }
 
     @Override
     public void defender(int danoRecibido) {
+        // FIX: un ataque nulo no causa dano y uno negativo no se convierte en un ataque real.
+        if (danoRecibido < 0) throw new IllegalArgumentException("El danio no puede ser negativo");
+        if (danoRecibido == 0) return;
         // Con enteros, 100 / 123 daria 0: por eso se divide con un double
         double factorMitigacion = PORCENTAJE_TOTAL / (PORCENTAJE_TOTAL + getDefensa());
         int danioFinal = (int) Math.round(danoRecibido * factorMitigacion);
@@ -247,7 +282,7 @@ public abstract class Personaje implements ICombatiente, Serializable {
             return 0;
         }
         int vidaAntes = vida;
-        setVida(vida + cantidad);
+        setVida((int) Math.min(vidaMaxima, (long) vida + cantidad)); // FIX: sumar en long evita matar al curar.
         return vida - vidaAntes;
     }
 
@@ -260,7 +295,7 @@ public abstract class Personaje implements ICombatiente, Serializable {
 
     @Override
     public synchronized boolean estaVivo() {
-        return estado != EstadoPersonaje.MUERTO;
+        return vida > 0;
     }
 
     // ---- efectos DoT / HoT
@@ -273,10 +308,13 @@ public abstract class Personaje implements ICombatiente, Serializable {
      * mapa {@code hilosEfectos} de modificaciones concurrentes.</p>
      */
     public synchronized void aplicarEfecto(EstadoEfecto efecto) {
+        Objects.requireNonNull(efecto, "efecto");
+        efecto = efecto.copia(); // FIX: capturar una sola duracion aunque el llamador modifique su instancia.
+        if (!estaVivo() || efecto.haTerminado()) return;
         // Detener hilo previo del mismo efecto si existe
         detenerEfectoContinuo(efecto.getNombre());
 
-        efectos.put(efecto.getNombre(), efecto.copia());
+        efectos.put(efecto.getNombre(), efecto);
         if (efecto.esDanio() && estado == EstadoPersonaje.VIVO) {
             estado = EstadoPersonaje.ENVENENADO;
         }
@@ -288,8 +326,29 @@ public abstract class Personaje implements ICombatiente, Serializable {
         EfectoContinuoTask tarea = new EfectoContinuoTask(this, efecto);
         Thread hilo = new Thread(tarea, "efecto-" + efecto.getNombre() + "-" + nombre);
         hilo.setDaemon(true);
-        hilo.start();
         hilosEfectos.put(efecto.getNombre(), hilo);
+        hilo.start(); // FIX: publicar identidad antes de permitir que el hilo ejecute su primer tick.
+    }
+
+    /** Aplica el tick solo mientras esta tarea siga siendo la propietaria del efecto. */
+    public synchronized boolean aplicarTickEfecto(EstadoEfecto efecto) {
+        EstadoEfecto activo = efectos.get(efecto.getNombre());
+        if (Thread.currentThread().isInterrupted() || !estaVivo() || activo == null
+                || activo.haTerminado() || hilosEfectos.get(efecto.getNombre()) != Thread.currentThread()) {
+            return false;
+        }
+        // FIX: validar cancelacion y mutar vida/progreso en una sola operacion atomica.
+        aplicarTickSecuencial(activo);
+        activo.consumirTurno();
+        if (efecto != activo) efecto.consumirTurno();
+        return true;
+    }
+
+    /** Cancela efectos al salir del combate, sin permitir ticks tardios sobre la partida siguiente. */
+    public synchronized void detenerEfectos() {
+        detenerTodosLosEfectosContinuos();
+        efectos.clear();
+        normalizarEstado();
     }
 
     public synchronized boolean quitarEfecto(String nombreEfecto) {
@@ -322,16 +381,15 @@ public abstract class Personaje implements ICombatiente, Serializable {
         // TALLER CONCURRENCIA: en el modelo concurrente, los efectos corren como hilos
         // EfectoContinuoTask. Este metodo queda como compatibilidad para el modo secuencial.
         List<String> mensajes = new ArrayList<>();
-        Iterator<EstadoEfecto> iterador = efectos.values().iterator();
-        while (iterador.hasNext()) {
-            EstadoEfecto efecto = iterador.next();
+        for (EstadoEfecto efecto : new ArrayList<>(efectos.values())) {
+            if (!estaVivo()) break;
             if (tieneHiloActivo(efecto.getNombre())) {
                 continue; // lo procesa su EfectoContinuoTask: evita el doble tick
             }
             mensajes.add(aplicarTickSecuencial(efecto));
             efecto.consumirTurno();
             if (efecto.haTerminado()) {
-                iterador.remove();
+                efectos.remove(efecto.getNombre());
                 detenerEfectoContinuo(efecto.getNombre());
                 mensajes.add(nombre + ": termina " + efecto.getNombre());
             }
@@ -426,7 +484,9 @@ public abstract class Personaje implements ICombatiente, Serializable {
 
     // ---- inventario, arma, gremio, habilidades
 
-    public String usarPocion(Pocion pocion) {
+    public synchronized String usarPocion(Pocion pocion) {
+        Objects.requireNonNull(pocion, "pocion");
+        if (!estaVivo()) throw new IllegalStateException("Un personaje muerto no puede usar pociones");
         int curado = curar(pocion.getCuracionReal());
         if (pocion.getEfecto() != null) {
             aplicarEfecto(pocion.getEfecto());
@@ -446,27 +506,26 @@ public abstract class Personaje implements ICombatiente, Serializable {
     }
 
     public void unirseAGremio(Gremio nuevoGremio) {
-        if (nuevoGremio == null || nuevoGremio == gremio) {
-            return;
+        synchronized (Gremio.MEMBRESIA_LOCK) {
+            if (nuevoGremio == null || nuevoGremio == gremio) return;
+            if (gremio != null) gremio.removerMiembro(this);
+            gremio = nuevoGremio;
+            nuevoGremio.agregarMiembro(this);
         }
-        if (gremio != null) {
-            gremio.removerMiembro(this);
-        }
-        gremio = nuevoGremio;
-        nuevoGremio.agregarMiembro(this);
     }
 
     public void abandonarGremio() {
-        Gremio anterior = gremio;
-        if (anterior == null) {
-            return;
+        synchronized (Gremio.MEMBRESIA_LOCK) {
+            Gremio anterior = gremio;
+            if (anterior == null) return;
+            gremio = null;
+            anterior.removerMiembro(this);
         }
-        gremio = null;
-        anterior.removerMiembro(this);
     }
 
     /** @return false si la habilidad ya estaba aprendida (el Set rechaza duplicados) */
-    public final boolean aprenderHabilidad(String habilidad) {
+    public final synchronized boolean aprenderHabilidad(String habilidad) {
+        if (habilidad == null || habilidad.isBlank()) throw new IllegalArgumentException("Habilidad vacia");
         return habilidades.add(habilidad);
     }
 
@@ -476,6 +535,9 @@ public abstract class Personaje implements ICombatiente, Serializable {
         vida = Math.max(0, Math.min(nuevaVida, vidaMaxima));
         if (vida == 0) {
             estado = EstadoPersonaje.MUERTO;
+            detenerEfectos(); // FIX: cancelar tambien los efectos pendientes al morir.
+        } else if (estado == EstadoPersonaje.MUERTO) {
+            estado = tieneEfectoDanio() ? EstadoPersonaje.ENVENENADO : EstadoPersonaje.VIVO;
         }
     }
 
@@ -490,9 +552,9 @@ public abstract class Personaje implements ICombatiente, Serializable {
         this.nivel = nivel;
     }
 
-    public void setNombre(String nombre) {
+    public synchronized void setNombre(String nombre) {
         validarNombre(nombre);
-        this.nombre = nombre;
+        this.nombre = nombre.trim();
     }
 
     public synchronized void setVidaMaxima(int vidaMaxima) {
@@ -504,10 +566,10 @@ public abstract class Personaje implements ICombatiente, Serializable {
     }
 
     public int getDefensa() {
-        return defensaBase + tipo.getBonificadorDefensa();
+        return acotarEstadistica((double) defensaBase + tipo.getBonificadorDefensa());
     }
 
-    public String getNombre() {
+    public synchronized String getNombre() {
         return nombre;
     }
 
@@ -527,7 +589,7 @@ public abstract class Personaje implements ICombatiente, Serializable {
         return estado;
     }
 
-    public Arma getArma() {
+    public synchronized Arma getArma() {
         return arma;
     }
 
@@ -539,11 +601,11 @@ public abstract class Personaje implements ICombatiente, Serializable {
         return inventario;
     }
 
-    public Set<String> getHabilidades() {
-        return Collections.unmodifiableSet(habilidades);
+    public synchronized Set<String> getHabilidades() {
+        return Set.copyOf(habilidades); // FIX: una vista viva no protege de modificaciones concurrentes.
     }
 
     public synchronized Collection<EstadoEfecto> getEfectos() {
-        return Collections.unmodifiableCollection(new ArrayList<>(efectos.values()));
+        return efectos.values().stream().map(EstadoEfecto::copia).toList(); // FIX: no exponer efectos mutables.
     }
 }

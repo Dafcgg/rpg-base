@@ -21,8 +21,8 @@ public class Arma implements Serializable {
     private final RaridadItem raridad;
 
     public Arma(String nombre, int danioBase, RaridadItem raridad) {
-        if (danioBase < 0) {
-            throw new IllegalArgumentException("El danio del arma no puede ser negativo");
+        if (nombre == null || nombre.isBlank() || danioBase < 0 || raridad == null) {
+            throw new IllegalArgumentException("Arma invalida"); // FIX: validar todos los campos antes de equipar.
         }
         this.nombre = nombre;
         this.danioBase = danioBase;
@@ -35,5 +35,13 @@ public class Arma implements Serializable {
 
     public String getNombre() {
         return nombre;
+    }
+
+    @Serial
+    private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        if (nombre == null || nombre.isBlank() || danioBase < 0 || raridad == null) {
+            throw new java.io.InvalidObjectException("Arma guardada invalida"); // FIX
+        }
     }
 }

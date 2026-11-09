@@ -1,0 +1,5 @@
+# Copia este archivo como config.txt y completa tus credenciales locales.
+# FIX: ejemplo reproducible sin secretos; no conceder privilegios de administrador al juego.
+url_grupal=jdbc:mysql://localhost:3306/rpg_grupal_db?connectTimeout=5000&socketTimeout=10000
+usuario=rpg_app
+clave=CAMBIAR_LOCALMENTE

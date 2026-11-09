@@ -33,41 +33,42 @@ public class MenuPrincipalUI {
     }
 
     private void ejecutarJuego() {
-        MotorJuego motor = new MotorJuego(consola);
+        // FIX: cerrar tambien el autoguardado cuando termina el menu por EOF o error.
+        try (MotorJuego motor = new MotorJuego(consola)) {
+            int opcion;
+            do {
+                mostrarMenu();
+                opcion = consola.leerEntero("Opcion: ", 0, 7);
 
-        int opcion;
-        do {
-            mostrarMenu();
-            opcion = consola.leerEntero("Opcion: ", 0, 7);
-
-            switch (opcion) {
-                case 1 -> motor.combateRapido();
-                case 2 -> motor.jugarTorneo();
-                case 3 -> motor.mostrarBestiario();
-                case 4 -> {
-                    System.out.println("\n--- Guardando Partida ---");
-                    motor.guardarPartidaEnDisco();
-                    motor.verMetadatosGuardado();
-                }
-                case 5 -> {
-                    System.out.println("\n--- Cargando Partida ---");
-                    motor.cargarPartidaDesdeDisco();
-                }
-                case 6 -> motor.verHistorialCombates();
-                case 7 -> {
-                    System.out.println("\n--- Borrar Partida Guardada ---");
-                    motor.verMetadatosGuardado();
-                    String conf = consola.leerLinea("Seguro de eliminar la partida guardada? (s/n): ");
-                    if ("s".equalsIgnoreCase(conf) || "si".equalsIgnoreCase(conf)) {
-                        motor.borrarPartidaGuardada();
-                    } else {
-                        System.out.println("Operacion cancelada.");
+                switch (opcion) {
+                    case 1 -> motor.combateRapido();
+                    case 2 -> motor.jugarTorneo();
+                    case 3 -> motor.mostrarBestiario();
+                    case 4 -> {
+                        System.out.println("\n--- Guardando Partida ---");
+                        motor.guardarPartidaEnDisco();
+                        motor.verMetadatosGuardado();
                     }
+                    case 5 -> {
+                        System.out.println("\n--- Cargando Partida ---");
+                        motor.cargarPartidaDesdeDisco();
+                    }
+                    case 6 -> motor.verHistorialCombates();
+                    case 7 -> {
+                        System.out.println("\n--- Borrar Partida Guardada ---");
+                        motor.verMetadatosGuardado();
+                        String conf = consola.leerLinea("Seguro de eliminar la partida guardada? (s/n): ");
+                        if ("s".equalsIgnoreCase(conf) || "si".equalsIgnoreCase(conf)) {
+                            motor.borrarPartidaGuardada();
+                        } else {
+                            System.out.println("Operacion cancelada.");
+                        }
+                    }
+                    case 0 -> System.out.println("Gracias por jugar. Hasta luego!");
+                    default -> System.out.println("Opcion no reconocida.");
                 }
-                case 0 -> System.out.println("Gracias por jugar. Hasta luego!");
-                default -> System.out.println("Opcion no reconocida.");
-            }
-        } while (opcion != 0);
+            } while (opcion != 0);
+        }
     }
 
     private void mostrarMenu() {
